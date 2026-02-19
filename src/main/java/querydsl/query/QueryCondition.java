@@ -1,7 +1,6 @@
 package querydsl.query;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -21,7 +20,7 @@ import java.util.List;
  * QueryCondition condition = new QueryCondition("firstName", QueryOperation.EQUALS, "John");
  * 
  * // IN condition with multiple values
- * QueryCondition inCondition = new QueryCondition("userRole", QueryOperation.IN, 
+ * QueryCondition inCondition = new QueryCondition("role.name", QueryOperation.IN, 
  *     Arrays.asList("ADMIN", "USER"));
  * 
  * // BETWEEN condition for date range

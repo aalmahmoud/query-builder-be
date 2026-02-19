@@ -87,8 +87,8 @@ public class GenericQueryService {
      *
      * Example:
      *     BooleanBuilder additionalPredicates = new BooleanBuilder();
-     *     if (userRole != null) {
-     *         additionalPredicates.and(QUser.user.userRole.eq(userRole));
+     *     if (roleName != null) {
+     *         additionalPredicates.and(QUser.user.role.name.eq(roleName));
      *     }
      *     if (loggedInUser != null) {
      *         additionalPredicates.and(QUser.user.createdBy.eq(loggedInUser));

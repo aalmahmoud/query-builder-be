@@ -190,7 +190,7 @@ public class QueryPredicateBuilder implements ApplicationContextAware {
                 }
                 
                 // Validate IN operation values size
-                if (condition.getOperation() == QueryOperation.IN || 
+                if (condition.getOperation() == QueryOperation.IN ||
                     condition.getOperation() == QueryOperation.NOT_IN) {
                     if (condition.getValues() != null && condition.getValues().size() > MAX_IN_VALUES) {
                         throw new IllegalArgumentException(
@@ -200,7 +200,7 @@ public class QueryPredicateBuilder implements ApplicationContextAware {
                 }
                 
                 // Validate BETWEEN operation
-                if (condition.getOperation() == QueryOperation.BETWEEN || 
+                if (condition.getOperation() == QueryOperation.BETWEEN ||
                     condition.getOperation() == QueryOperation.NOT_BETWEEN) {
                     if (condition.getStartValue() == null || condition.getEndValue() == null) {
                         throw new IllegalArgumentException(
@@ -334,8 +334,9 @@ public class QueryPredicateBuilder implements ApplicationContextAware {
     /**
      * Loads Q-entity using reflection (cached after first load).
      * 
-     * Attempts to load Q-entity in camelCase format first (e.g., QUser.user),
-     * then falls back to lowercase format (e.g., QUser.user) for backward compatibility.
+     * Attempts to load the Q-entity field in camelCase format first (e.g., QUser.user),
+     * then falls back to all-lowercase format (e.g., QUser.user → field name "user")
+     * for backward compatibility with non-standard QueryDSL configurations.
      * 
      * @param entityClass The entity class to load Q-entity for
      * @return The Q-entity instance

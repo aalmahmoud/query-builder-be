@@ -29,12 +29,12 @@ import java.util.List;
  * </pre>
  * 
  * <p>For type-safe query building in services, use {@link com.querydsl.core.BooleanBuilder}
- * with Q entities via {@link service.GenericQueryService#findAllByQueryRequestWithAdditionalPredicates}
+ * with Q entities via {@link querydsl.service.GenericQueryService#findAllByQueryRequestWithAdditionalPredicates}
  * instead of modifying QueryRequest directly.
  * 
  * @see QueryCondition
  * @see SortField
- * @see service.GenericQueryService
+ * @see querydsl.service.GenericQueryService
  */
 @Data
 @NoArgsConstructor
