@@ -1,0 +1,4 @@
+rootProject.name = 'querydslbuilder'
+
+include 'generic-querydsl'
+project(':generic-querydsl').projectDir = new File(settingsDir, 'generic-querydsl')
