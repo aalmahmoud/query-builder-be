@@ -2,6 +2,7 @@ package querydsl.model;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
+import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -15,6 +16,7 @@ import querydsl.security.EncryptedStringConverter;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
+@EqualsAndHashCode(callSuper = true)
 @Exportable(fields = {
         "id", "firstName", "lastName", "email", "mobileNumber", "nationalId", "isActive",
         "createdDate", "lastModifiedDate", "createdBy", "lastModifiedBy",
@@ -33,6 +35,7 @@ public class User extends BaseEntity {
     private String lastName;
 
     @Column(nullable = false, unique = true, length = 200)
+    @EqualsAndHashCode.Include
     private String email;
 
     @Column(length = 20)
@@ -61,7 +64,7 @@ public class User extends BaseEntity {
     private Role role;
 
     @Column(nullable = false)
-    private Boolean isActive = true;
+    private Boolean isActive;
 
     @Column(length = 255)
     private String password;

@@ -6,7 +6,7 @@ package querydsl.query;
  * <p>This exception is thrown by QueryPredicateBuilder when:
  * <ul>
  *   <li>A field path cannot be resolved (e.g., "nonExistentField")</li>
-     *   <li>A nested field path is invalid (e.g., "role.invalidField")</li>
+ *   <li>A nested field path is invalid (e.g., "role.invalidField")</li>
  *   <li>A field cannot be accessed due to reflection errors</li>
  * </ul>
  * 

@@ -85,15 +85,19 @@ public class QueryPredicateBuilder {
     private static final Map<String, Field> FIELD_CACHE = new ConcurrentHashMap<>(128);
     
     // Maximum number of conditions allowed per query (prevents resource exhaustion)
-    private static final int MAX_CONDITIONS = 50;
-    
-    // Maximum depth of nested field paths (e.g., "role.name" = depth 2)
-    private static final int MAX_FIELD_PATH_DEPTH = 5;
-    
+    // Maximum number of conditions allowed per query (prevents resource exhaustion).
+    // Phase 5 fix 5.5: made public so QueryRequest's @Size annotation can reference
+    // this single source of truth.
+    public static final int MAX_CONDITIONS = 50;
+
+    // Maximum number of dotted path segments. "role.name" = 2 segments,
+    // "role.permissions.name" = 3, etc. Limits join depth and rules out abuse.
+    private static final int MAX_FIELD_PATH_SEGMENTS = 5;
+
     // Maximum number of values allowed in IN operations (prevents memory exhaustion and
     // pathological query plans). Phase 4 fix 4.4: lowered from 1000 to 200 — JDBC drivers
     // and the planner choke long before 1000 in most cases.
-    private static final int MAX_IN_VALUES = 200;
+    public static final int MAX_IN_VALUES = 200;
     
     // Field name validation pattern: alphanumeric, underscore, and dot only
     private static final Pattern FIELD_NAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_.]+$");
@@ -185,10 +189,10 @@ public class QueryPredicateBuilder {
                 
                 // Validate field path depth
                 int depth = field.split("\\.").length;
-                if (depth > MAX_FIELD_PATH_DEPTH) {
+                if (depth > MAX_FIELD_PATH_SEGMENTS) {
                     throw new IllegalArgumentException(
                         String.format("Field path too deep: '%s'. Maximum depth: %d", 
-                            field, MAX_FIELD_PATH_DEPTH));
+                            field, MAX_FIELD_PATH_SEGMENTS));
                 }
                 
                 // Validate IN operation values size
@@ -233,10 +237,10 @@ public class QueryPredicateBuilder {
                 
                 // Validate field path depth
                 int depth = field.split("\\.").length;
-                if (depth > MAX_FIELD_PATH_DEPTH) {
+                if (depth > MAX_FIELD_PATH_SEGMENTS) {
                     throw new IllegalArgumentException(
                         String.format("Sort field path too deep: '%s'. Maximum depth: %d", 
-                            field, MAX_FIELD_PATH_DEPTH));
+                            field, MAX_FIELD_PATH_SEGMENTS));
                 }
             }
         }
@@ -345,41 +349,20 @@ public class QueryPredicateBuilder {
      * @throws RuntimeException if Q-entity cannot be loaded (class not found, field not found, etc.)
      */
     private static Object loadQEntity(Class<?> entityClass) {
+        // QueryDSL generates camelCase static fields on Q-classes: User → QUser.user.
+        // The previous implementation had an all-lowercase fallback for "backward
+        // compatibility" with non-standard QueryDSL configs — there is no such config
+        // in this codebase, so the fallback is dead code (Phase 5 fix 5.4).
         try {
-            String qClassName = entityClass.getSimpleName();
-            if (!qClassName.startsWith("Q")) {
-                qClassName = "Q" + qClassName;
-            }
-            
-            Class<?> qClass = Class.forName(entityClass.getPackage().getName() + "." + qClassName);
-            
-            // QueryDSL generates field names in camelCase: QUser -> user
-            // Convert "User" to "user" (first letter lowercase)
             String entitySimpleName = entityClass.getSimpleName();
-            String fieldName = entitySimpleName.substring(0, 1).toLowerCase() + entitySimpleName.substring(1);
-            
+            String qClassName = entitySimpleName.startsWith("Q") ? entitySimpleName : "Q" + entitySimpleName;
+            Class<?> qClass = Class.forName(entityClass.getPackage().getName() + "." + qClassName);
+            String fieldName = Character.toLowerCase(entitySimpleName.charAt(0)) + entitySimpleName.substring(1);
             Field field = qClass.getDeclaredField(fieldName);
             field.setAccessible(true);
             return field.get(null);
-            
-        } catch (NoSuchFieldException e) {
-            // Try alternative field name format (all lowercase) for backward compatibility
-            try {
-                String qClassName = entityClass.getSimpleName();
-                if (!qClassName.startsWith("Q")) {
-                    qClassName = "Q" + qClassName;
-                }
-                Class<?> qClass = Class.forName(entityClass.getPackage().getName() + "." + qClassName);
-                String fieldName = entityClass.getSimpleName().toLowerCase();
-                Field field = qClass.getDeclaredField(fieldName);
-                field.setAccessible(true);
-                return field.get(null);
-            } catch (Exception e2) {
-                log.error("Failed to load Q-entity for: {} (tried both camelCase and lowercase)", entityClass.getName(), e);
-                throw new RuntimeException("Failed to load Q-entity for: " + entityClass.getName(), e);
-            }
         } catch (Exception e) {
-            log.error("Failed to load Q-entity for: {}", entityClass.getName(), e);
+            log.error("Failed to load Q-entity for {}", entityClass.getName(), e);
             throw new RuntimeException("Failed to load Q-entity for: " + entityClass.getName(), e);
         }
     }

@@ -8,6 +8,7 @@ import querydsl.model.User;
 import querydsl.query.QueryRequest;
 import querydsl.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.groups.Default;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +26,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/user")
 @RequiredArgsConstructor
+@Tag(name = "Users", description = "User CRUD and query endpoints")
 public class UserController {
 
     private final UserService userService;

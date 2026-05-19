@@ -2,6 +2,7 @@ package querydsl.model;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
+import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -14,6 +15,7 @@ import querydsl.query.SortableFields;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
+@EqualsAndHashCode(callSuper = true)
 @Exportable(fields = {
         "id", "name", "resource", "action", "description", "isActive",
         "createdDate", "lastModifiedDate", "createdBy", "lastModifiedBy"
@@ -24,6 +26,7 @@ import querydsl.query.SortableFields;
 public class Permission extends BaseEntity {
 
     @Column(nullable = false, unique = true, length = 100)
+    @EqualsAndHashCode.Include
     private String name;
 
     @Column(length = 200)
@@ -36,5 +39,5 @@ public class Permission extends BaseEntity {
     private String description;
 
     @Column(nullable = false)
-    private Boolean isActive = true;
+    private Boolean isActive;
 }

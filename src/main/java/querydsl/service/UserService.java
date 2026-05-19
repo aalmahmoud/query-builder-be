@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
@@ -40,6 +41,9 @@ public class UserService {
     public void addUser(UserDto userDto) {
         Role role = resolveRole(userDto.getRoleId());
         User user = userMapper.toEntity(userDto, role);
+        // Phase 5 fix 5.16: normalise email so "Foo@Bar.com" and "foo@bar.com" don't
+        // both register as distinct users.
+        user.setEmail(normaliseEmail(user.getEmail()));
 
         if (userDto.getPassword() != null && !userDto.getPassword().isEmpty()) {
             user.setPassword(passwordEncoder.encode(userDto.getPassword()));
@@ -59,6 +63,7 @@ public class UserService {
                 .orElseThrow(() -> new EntityNotFoundException("User", id));
         Role role = resolveRole(userDto.getRoleId());
         userMapper.updateEntityFromDto(userDto, user, role);
+        user.setEmail(normaliseEmail(user.getEmail()));
 
         if (userDto.getPassword() != null && !userDto.getPassword().isEmpty()) {
             user.setPassword(passwordEncoder.encode(userDto.getPassword()));
@@ -67,6 +72,10 @@ public class UserService {
 
         userRepository.save(user);
         log.info("User updated: {}", user.getEmail());
+    }
+
+    private static String normaliseEmail(String email) {
+        return email == null ? null : email.trim().toLowerCase(Locale.ROOT);
     }
 
     /**

@@ -8,6 +8,7 @@ import querydsl.model.Permission;
 import querydsl.query.QueryRequest;
 import querydsl.service.PermissionService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -22,6 +23,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/permission")
 @RequiredArgsConstructor
+@Tag(name = "Permissions", description = "Permission CRUD and query endpoints")
 public class PermissionController {
 
     private final PermissionService permissionService;

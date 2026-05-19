@@ -2,6 +2,7 @@ package querydsl.model;
 
 import jakarta.persistence.*;
 
+import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.data.annotation.CreatedBy;
@@ -15,11 +16,17 @@ import java.time.LocalDateTime;
 /**
  * Base entity class for auditing
  * Provides common fields: id, createdBy, createdDate, lastModifiedBy, lastModifiedDate
+ *
+ * <p>Phase 5 fix 5.27: subclasses are expected to declare a stable business key with
+ * {@link EqualsAndHashCode.Include @EqualsAndHashCode.Include} on one field (e.g.
+ * {@code email} for User). The generated {@code id} is a poor key for equality —
+ * it is null on transient entities and would make a HashSet of new objects collapse.
  */
 @MappedSuperclass
 @EntityListeners(AuditingEntityListener.class)
 @Getter
 @Setter
+@EqualsAndHashCode(onlyExplicitlyIncluded = true)
 public abstract class BaseEntity {
 
     @Id

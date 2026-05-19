@@ -8,6 +8,7 @@ import querydsl.model.Role;
 import querydsl.query.QueryRequest;
 import querydsl.service.RoleService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -22,6 +23,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/role")
 @RequiredArgsConstructor
+@Tag(name = "Roles", description = "Role CRUD and query endpoints")
 public class RoleController {
 
     private final RoleService roleService;

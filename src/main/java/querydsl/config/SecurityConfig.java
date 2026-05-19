@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import querydsl.dto.ErrorResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -29,7 +30,6 @@ import querydsl.security.LoginRateLimitFilter;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Spring Security configuration with JWT authentication and role-based authorization.
@@ -49,6 +49,7 @@ public class SecurityConfig {
     
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final LoginRateLimitFilter loginRateLimitFilter;
+    private final ObjectMapper objectMapper;
 
     /**
      * Phase 4 fix 4.11: CORS allow-list moved out of code into properties so prod can
@@ -153,18 +154,25 @@ public class SecurityConfig {
         return source;
     }
     
+    /**
+     * Phase 5 fix 5.11 + 5.12: use the Spring-managed ObjectMapper and the project's
+     * {@link ErrorResponse} envelope, so the JSON shape returned by the security layer
+     * matches what {@link querydsl.exception.GlobalExceptionHandler} produces for
+     * controller-level errors. One error contract instead of two.
+     */
     @Bean
     public AuthenticationEntryPoint authenticationEntryPoint() {
         return (request, response, authException) -> {
             response.setStatus(HttpStatus.UNAUTHORIZED.value());
             response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-            new ObjectMapper().writeValue(response.getOutputStream(), Map.of(
-                    "timestamp", LocalDateTime.now().toString(),
-                    "status", 401,
-                    "error", "Unauthorized",
-                    "message", "Authentication required. Provide a valid JWT token in the Authorization header.",
-                    "path", request.getRequestURI()
-            ));
+            objectMapper.writeValue(response.getOutputStream(),
+                    ErrorResponse.builder()
+                            .timestamp(LocalDateTime.now())
+                            .status(HttpStatus.UNAUTHORIZED.value())
+                            .error(HttpStatus.UNAUTHORIZED.getReasonPhrase())
+                            .message("Authentication required. Provide a valid JWT token in the Authorization header.")
+                            .path(request.getRequestURI())
+                            .build());
         };
     }
 
@@ -173,13 +181,14 @@ public class SecurityConfig {
         return (request, response, accessDeniedException) -> {
             response.setStatus(HttpStatus.FORBIDDEN.value());
             response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-            new ObjectMapper().writeValue(response.getOutputStream(), Map.of(
-                    "timestamp", LocalDateTime.now().toString(),
-                    "status", 403,
-                    "error", "Forbidden",
-                    "message", "You do not have permission to access this resource.",
-                    "path", request.getRequestURI()
-            ));
+            objectMapper.writeValue(response.getOutputStream(),
+                    ErrorResponse.builder()
+                            .timestamp(LocalDateTime.now())
+                            .status(HttpStatus.FORBIDDEN.value())
+                            .error(HttpStatus.FORBIDDEN.getReasonPhrase())
+                            .message("You do not have permission to access this resource.")
+                            .path(request.getRequestURI())
+                            .build());
         };
     }
 

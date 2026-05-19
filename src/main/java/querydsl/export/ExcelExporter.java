@@ -75,9 +75,18 @@ public class ExcelExporter {
                 }
             }
 
-            // Auto-size columns
-            for (int i = 0; i < firstRow.size(); i++) {
-                sheet.autoSizeColumn(i);
+            // Phase 5 fix 5.18: autoSizeColumn iterates every row computing widths and is
+            // dramatically slow on large exports (10s of seconds for 10k+ rows). Skip it
+            // beyond a sensible threshold and apply a fixed default width instead.
+            final int AUTO_SIZE_THRESHOLD = 5_000;
+            if (data.size() <= AUTO_SIZE_THRESHOLD) {
+                for (int i = 0; i < firstRow.size(); i++) {
+                    sheet.autoSizeColumn(i);
+                }
+            } else {
+                for (int i = 0; i < firstRow.size(); i++) {
+                    sheet.setColumnWidth(i, 20 * 256); // ~20 chars wide
+                }
             }
 
             ByteArrayOutputStream out = new ByteArrayOutputStream();

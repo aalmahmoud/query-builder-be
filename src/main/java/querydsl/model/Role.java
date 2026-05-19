@@ -2,6 +2,7 @@ package querydsl.model;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
+import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -17,6 +18,7 @@ import java.util.Set;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
+@EqualsAndHashCode(callSuper = true)
 @Exportable(fields = {
         "id", "name", "description", "isActive",
         "createdDate", "lastModifiedDate", "createdBy", "lastModifiedBy"
@@ -27,13 +29,14 @@ import java.util.Set;
 public class Role extends BaseEntity {
 
     @Column(nullable = false, unique = true, length = 100)
+    @EqualsAndHashCode.Include
     private String name;
 
     @Column(length = 500)
     private String description;
 
     @Column(nullable = false)
-    private Boolean isActive = true;
+    private Boolean isActive;
 
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(

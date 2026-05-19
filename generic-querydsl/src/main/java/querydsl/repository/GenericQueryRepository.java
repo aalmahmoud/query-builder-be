@@ -71,43 +71,6 @@ public interface GenericQueryRepository<T, ID> extends JpaRepository<T, ID>, Que
     }
 
     /**
-     * Find all entities matching the given QueryRequest with projection
-     * This allows you to query entities and map them to a projection/DTO
-     *
-     * WARNING: This method performs an unsafe cast. It assumes the entity class
-     * matches the projection class. For proper mapping, use MapStruct or manual mapping.
-     *
-     * @param queryRequest The query request containing conditions
-     * @param pageable Pagination information
-     * @param projectionClass The projection/DTO class to map results to (must be assignable from T)
-     * @return Page of projected results matching the query
-     * @throws ClassCastException if T is not assignable to P
-     */
-    @Deprecated
-    default <P> Page<P> findAllByQueryRequestWithProjection(QueryRequest queryRequest, Pageable pageable, Class<P> projectionClass) {
-        Predicate predicate = QueryPredicateBuilder.getInstance()
-                .buildPredicate(queryRequest, getEntityClass());
-
-        // First get the entities
-        Page<T> entities = findAll(predicate, pageable);
-
-        // Then map them to projection - this is a simplified approach
-        // For more complex projections, you should use QueryDSL Projections.bean() or MapStruct
-        if (!projectionClass.isAssignableFrom(getEntityClass())) {
-            throw new ClassCastException(
-                    String.format("Entity class %s is not assignable to projection class %s. " +
-                                    "Use MapStruct or manual mapping instead.",
-                            getEntityClass().getName(), projectionClass.getName()));
-        }
-
-        return entities.map(entity -> {
-            @SuppressWarnings("unchecked")
-            P projected = (P) entity;
-            return projected;
-        });
-    }
-
-    /**
      * Find all entities matching the given QueryRequest with additional predicates
      * This allows you to combine QueryRequest predicates with custom predicates using BooleanBuilder
      *

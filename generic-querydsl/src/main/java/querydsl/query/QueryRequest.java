@@ -45,7 +45,8 @@ public class QueryRequest {
      * List of query conditions to apply
      */
     @Valid
-    @Size(max = 50, message = "Maximum 50 conditions allowed")
+    @Size(max = QueryPredicateBuilder.MAX_CONDITIONS,
+            message = "Maximum 50 conditions allowed")
     private List<QueryCondition> conditions;
     
     /**

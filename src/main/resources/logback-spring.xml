@@ -3,7 +3,9 @@
     <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
 
     <!-- Property definitions -->
-    <property name="LOG_FILE" value="${LOG_FILE:-${LOG_PATH:-${LOG_TEMP:-${java.io.tmpdir:-/tmp}}/}spring.log}"/>
+    <!-- Phase 5 fix 5.22: default to ./logs (already gitignored) instead of the JVM temp dir
+         so logs land somewhere predictable rather than in C:\Users\…\AppData\Local\Temp\. -->
+    <property name="LOG_FILE" value="${LOG_FILE:-${LOG_PATH:-./logs}/spring.log}"/>
     <property name="LOG_FILE_MAX_SIZE" value="10MB"/>
     <property name="LOG_FILE_MAX_HISTORY" value="30"/>
 
