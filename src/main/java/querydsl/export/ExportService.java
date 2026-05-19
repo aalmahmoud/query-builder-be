@@ -6,17 +6,27 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import querydsl.exception.QueryException;
 
 import java.lang.reflect.Method;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
- * Generic export service that works with any entity type.
- * Uses reflection to extract field values dynamically.
+ * Generic export service.
+ *
+ * <p>Phase 1 fix 1.1: every entity that participates in exports MUST declare an
+ * {@link Exportable} allow-list of dot-notation paths. Any column requested by a
+ * client that is not on the allow-list is rejected. Navigation goes through public
+ * getters only — the previous {@code setAccessible(true)} fallback that leaked
+ * private fields (including {@code User.password}) has been removed.
  */
 @Service
 @RequiredArgsConstructor
@@ -26,21 +36,16 @@ public class ExportService {
     private static final String EXCEL_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
     private static final String PDF_CONTENT_TYPE = "application/pdf";
 
-    /**
-     * Exports entities and builds a downloadable HTTP response.
-     *
-     * @param entities   list of entities to export
-     * @param request    export parameters (columns, format, headers)
-     * @param filePrefix prefix for the generated filename (e.g. "users", "roles")
-     * @return ResponseEntity with the file bytes and appropriate headers
-     */
+    /** Entity class → frozen set of exportable paths. Populated lazily, never invalidated. */
+    private static final Map<Class<?>, Set<String>> ALLOWED_PATHS_CACHE = new ConcurrentHashMap<>();
+
     public <T> ResponseEntity<byte[]> buildExportResponse(List<T> entities, ExportRequest request, String filePrefix) {
         byte[] data = exportData(entities, request);
 
         boolean isExcel = "EXCEL".equalsIgnoreCase(request.getFormat());
         String extension = isExcel ? ".xlsx" : ".pdf";
         String contentType = isExcel ? EXCEL_CONTENT_TYPE : PDF_CONTENT_TYPE;
-        String filename = filePrefix + "_" + LocalDate.now() + extension;
+        String filename = filePrefix + "_" + LocalDate.now(ZoneOffset.UTC) + extension;
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + filename)
@@ -48,125 +53,110 @@ public class ExportService {
                 .body(data);
     }
 
-    /**
-     * Export data from any entity list to Excel or PDF format.
-     *
-     * @param entities list of entities to export
-     * @param request  export request with column selection and format
-     * @return byte array containing the exported file
-     */
     public <T> byte[] exportData(List<T> entities, ExportRequest request) {
         if (entities == null || entities.isEmpty()) {
             log.warn("Empty entity list provided for export");
             return new byte[0];
         }
 
+        List<String> requested = request.getSelectedColumns();
+        if (requested == null || requested.isEmpty()) {
+            log.warn("No columns selected for export");
+            return new byte[0];
+        }
+
+        Class<?> entityClass = entities.get(0).getClass();
+        Set<String> allowed = allowedPaths(entityClass);
+
+        for (String col : requested) {
+            if (!allowed.contains(col)) {
+                throw new QueryException(
+                        "Column '" + col + "' is not exportable on "
+                                + simpleNameOf(entityClass) + ". Allowed: " + new TreeSet<>(allowed));
+            }
+        }
+
         List<Map<String, Object>> data = entities.stream()
-                .map(entity -> filterColumns(entity, request.getSelectedColumns()))
+                .map(entity -> extractRow(entity, requested))
                 .collect(Collectors.toList());
 
         if ("EXCEL".equalsIgnoreCase(request.getFormat())) {
             return ExcelExporter.export(data, request.getFriendlyHeaders());
-        } else {
-            return PdfExporter.export(data, request.getFriendlyHeaders());
         }
+        return PdfExporter.export(data, request.getFriendlyHeaders());
     }
 
     /**
-     * Extract selected columns from an entity using reflection
-     * 
-     * @param entity The entity to extract data from
-     * @param selectedColumns List of column names to extract
-     * @return Map of column name to value
+     * Resolves the {@link Exportable} allow-list for an entity. Walks up the class
+     * hierarchy so Hibernate proxies (which subclass the entity) also work.
      */
-    private <T> Map<String, Object> filterColumns(T entity, List<String> selectedColumns) {
-        Map<String, Object> map = new LinkedHashMap<>();
-
-        if (selectedColumns == null || selectedColumns.isEmpty()) {
-            log.warn("No columns selected for export, returning empty map");
-            return map;
-        }
-
-        Class<?> entityClass = entity.getClass();
-
-        for (String col : selectedColumns) {
-            try {
-                Object value = getFieldValue(entity, entityClass, col);
-                // Use friendly header if available, otherwise use column name as-is
-                map.put(col, value);
-            } catch (Exception e) {
-                log.warn("Failed to extract field '{}' from entity {}: {}", col, entityClass.getSimpleName(), e.getMessage());
-                map.put(col, "");
-            }
-        }
-
-        return map;
-    }
-
-    /**
-     * Get field value from entity using reflection
-     * Supports both direct field access and getter methods
-     * 
-     * @param entity The entity instance
-     * @param entityClass The entity class
-     * @param fieldName The field name (supports nested fields with dot notation)
-     * @return The field value
-     */
-    private Object getFieldValue(Object entity, Class<?> entityClass, String fieldName) {
-        if (entity == null) {
-            return null;
-        }
-
-        // Handle nested fields (e.g., "role.name")
-        if (fieldName.contains(".")) {
-            String[] parts = fieldName.split("\\.", 2);
-            Object nestedEntity = getFieldValue(entity, entityClass, parts[0]);
-            if (nestedEntity == null) {
-                return null;
-            }
-            return getFieldValue(nestedEntity, nestedEntity.getClass(), parts[1]);
-        }
-
-        // Try getter method first (e.g., getFirstName, isActive)
-        String getterName = "get" + capitalize(fieldName);
-        try {
-            Method getter = entityClass.getMethod(getterName);
-            return getter.invoke(entity);
-        } catch (NoSuchMethodException e) {
-            // Try boolean getter (e.g., isActive)
-            if (fieldName.startsWith("is") || fieldName.startsWith("has")) {
-                try {
-                    Method booleanGetter = entityClass.getMethod(fieldName);
-                    return booleanGetter.invoke(entity);
-                } catch (Exception ex) {
-                    // Fall through to field access
+    private static Set<String> allowedPaths(Class<?> entityClass) {
+        return ALLOWED_PATHS_CACHE.computeIfAbsent(entityClass, c -> {
+            for (Class<?> cur = c; cur != null && cur != Object.class; cur = cur.getSuperclass()) {
+                Exportable ann = cur.getAnnotation(Exportable.class);
+                if (ann != null) {
+                    return Set.of(ann.fields());
                 }
             }
-        } catch (Exception e) {
-            log.debug("Getter method failed for field '{}', trying direct field access: {}", fieldName, e.getMessage());
-        }
+            throw new QueryException(simpleNameOf(c)
+                    + " is not annotated with @Exportable; refusing to export.");
+        });
+    }
 
-        // Try direct field access
-        try {
-            java.lang.reflect.Field field = entityClass.getDeclaredField(fieldName);
-            field.setAccessible(true);
-            return field.get(entity);
-        } catch (NoSuchFieldException e) {
-            log.warn("Field '{}' not found in entity {}", fieldName, entityClass.getSimpleName());
-            return null;
-        } catch (Exception e) {
-            log.warn("Failed to access field '{}' in entity {}: {}", fieldName, entityClass.getSimpleName(), e.getMessage());
-            return null;
+    private Map<String, Object> extractRow(Object entity, List<String> columns) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        for (String col : columns) {
+            try {
+                row.put(col, walkGetters(entity, col));
+            } catch (Exception ex) {
+                log.warn("Failed to read '{}' from {}: {}", col,
+                        simpleNameOf(entity.getClass()), ex.getMessage());
+                row.put(col, "");
+            }
         }
+        return row;
     }
 
     /**
-     * Capitalize first letter of a string
+     * Walks a dotted path using public getters only. No private-field fallback,
+     * no {@code setAccessible(true)}.
      */
-    private String capitalize(String str) {
-        if (str == null || str.isEmpty()) {
-            return str;
+    private Object walkGetters(Object entity, String path) throws Exception {
+        Object current = entity;
+        for (String segment : path.split("\\.")) {
+            if (current == null) {
+                return null;
+            }
+            current = invokeGetter(current, segment);
         }
-        return str.substring(0, 1).toUpperCase() + str.substring(1);
+        return current;
+    }
+
+    private Object invokeGetter(Object target, String fieldName) throws Exception {
+        String cap = Character.toUpperCase(fieldName.charAt(0)) + fieldName.substring(1);
+        Class<?> targetClass = target.getClass();
+        try {
+            Method getter = targetClass.getMethod("get" + cap);
+            return getter.invoke(target);
+        } catch (NoSuchMethodException ignored) {
+            // try is*
+        }
+        try {
+            Method getter = targetClass.getMethod("is" + cap);
+            return getter.invoke(target);
+        } catch (NoSuchMethodException ignored) {
+            // fall through
+        }
+        throw new NoSuchMethodException(
+                "No public getter for '" + fieldName + "' on " + simpleNameOf(targetClass));
+    }
+
+    private static String simpleNameOf(Class<?> c) {
+        // Hibernate proxy classes have ugly synthetic names; report the entity name instead.
+        Class<?> cur = c;
+        while (cur != null && cur.getSimpleName().contains("$HibernateProxy")) {
+            cur = cur.getSuperclass();
+        }
+        return cur != null ? cur.getSimpleName() : c.getSimpleName();
     }
 }

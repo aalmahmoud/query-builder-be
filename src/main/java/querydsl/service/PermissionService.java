@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,6 +27,7 @@ public class PermissionService {
     private final GenericQueryService genericQueryService;
 
     @Transactional
+    @PreAuthorize("hasRole('ADMIN')")
     public void addPermission(PermissionDto permissionDto) {
         Permission permission = permissionMapper.toEntity(permissionDto);
         permissionRepository.save(permission);
@@ -33,6 +35,7 @@ public class PermissionService {
     }
 
     @Transactional
+    @PreAuthorize("hasRole('ADMIN')")
     public void updatePermission(Long id, PermissionDto permissionDto) {
         Permission permission = permissionRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Permission", id));
@@ -42,6 +45,7 @@ public class PermissionService {
     }
 
     @Transactional
+    @PreAuthorize("hasRole('ADMIN')")
     public void deletePermission(Long id) {
         if (!permissionRepository.existsById(id)) {
             throw new EntityNotFoundException("Permission", id);

@@ -5,6 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import querydsl.export.Exportable;
 
 @Entity
 @Table(name = "permissions")
@@ -12,6 +13,10 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
+@Exportable(fields = {
+        "id", "name", "resource", "action", "description", "isActive",
+        "createdDate", "lastModifiedDate", "createdBy", "lastModifiedBy"
+})
 public class Permission extends BaseEntity {
 
     @Column(nullable = false, unique = true, length = 100)

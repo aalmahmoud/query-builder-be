@@ -5,6 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import querydsl.export.Exportable;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -15,6 +16,10 @@ import java.util.Set;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
+@Exportable(fields = {
+        "id", "name", "description", "isActive",
+        "createdDate", "lastModifiedDate", "createdBy", "lastModifiedBy"
+})
 public class Role extends BaseEntity {
 
     @Column(nullable = false, unique = true, length = 100)

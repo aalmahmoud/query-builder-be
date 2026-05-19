@@ -3,6 +3,7 @@ package querydsl.security;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
@@ -29,11 +30,23 @@ import java.util.stream.Collectors;
 @Component
 public class JwtTokenProvider {
     
-    @Value("${jwt.secret:your-secret-key-change-this-in-production-minimum-256-bits}")
+    private static final int MIN_SECRET_BYTES = 32; // 256 bits required for HS256
+
+    @Value("${jwt.secret}")
     private String jwtSecret;
-    
+
     @Value("${jwt.expiration:86400000}") // 24 hours default
     private long jwtExpirationInMs;
+
+    @PostConstruct
+    void validateSecret() {
+        if (jwtSecret == null || jwtSecret.getBytes(StandardCharsets.UTF_8).length < MIN_SECRET_BYTES) {
+            throw new IllegalStateException(
+                    "jwt.secret must be set via the JWT_SECRET environment variable and be at least "
+                            + MIN_SECRET_BYTES + " bytes (256 bits for HS256). "
+                            + "Generate one with: openssl rand -base64 48");
+        }
+    }
     
     /**
      * Generate JWT token from authentication

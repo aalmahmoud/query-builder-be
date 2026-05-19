@@ -4,6 +4,7 @@ package querydsl.query;
 import com.querydsl.core.BooleanBuilder;
 import com.querydsl.core.types.Predicate;
 import com.querydsl.core.types.dsl.*;
+import querydsl.exception.QueryException;
 import querydsl.query.computed.ComputedFieldHandlerRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeansException;
@@ -293,8 +294,8 @@ public class QueryPredicateBuilder implements ApplicationContextAware {
             QueryCondition conditionToUse = getQueryCondition(condition, operation);
             return buildFieldPredicate(qEntity, conditionToUse, entityClass);
             
-        } catch (InvalidFieldException e) {
-            // Re-throw InvalidFieldException as-is
+        } catch (InvalidFieldException | QueryException | IllegalArgumentException e) {
+            // Bubble up domain exceptions so the global handler can produce the right 4xx.
             throw e;
         } catch (Exception e) {
             log.error("Could not build predicate for field: {} - {}", condition.getField(), e.getMessage(), e);
@@ -406,16 +407,16 @@ public class QueryPredicateBuilder implements ApplicationContextAware {
             
             return buildOperationPredicate(fieldPath, condition);
             
-        } catch (InvalidFieldException e) {
-            // Re-throw InvalidFieldException as-is
+        } catch (InvalidFieldException | QueryException | IllegalArgumentException e) {
+            // Bubble up domain exceptions so the global handler can produce the right 4xx.
             throw e;
         } catch (Exception e) {
             log.error("Error building predicate for field: {} - {}", condition.getField(), e.getMessage());
             throw new InvalidFieldException(condition.getField(), entityClass);
         }
     }
-    
-    
+
+
     /**
      * Navigates to a field using dot notation with caching.
      * 
@@ -579,12 +580,20 @@ public class QueryPredicateBuilder implements ApplicationContextAware {
                 return buildNotContainsIgnoreCasePredicate(fieldPath, convertedValue);
             case STARTS_WITH:
                 return buildStartsWithPredicate(fieldPath, convertedValue);
+            case NOT_STARTS_WITH:
+                return buildStartsWithPredicate(fieldPath, convertedValue).not();
             case STARTS_WITH_IGNORE_CASE:
                 return buildStartsWithIgnoreCasePredicate(fieldPath, convertedValue);
+            case NOT_STARTS_WITH_IGNORE_CASE:
+                return buildStartsWithIgnoreCasePredicate(fieldPath, convertedValue).not();
             case ENDS_WITH:
                 return buildEndsWithPredicate(fieldPath, convertedValue);
+            case NOT_ENDS_WITH:
+                return buildEndsWithPredicate(fieldPath, convertedValue).not();
             case ENDS_WITH_IGNORE_CASE:
                 return buildEndsWithIgnoreCasePredicate(fieldPath, convertedValue);
+            case NOT_ENDS_WITH_IGNORE_CASE:
+                return buildEndsWithIgnoreCasePredicate(fieldPath, convertedValue).not();
             case BETWEEN:
                 return buildBetweenPredicate(fieldPath, convertedStartValue, convertedEndValue);
             case NOT_BETWEEN:
@@ -610,9 +619,19 @@ public class QueryPredicateBuilder implements ApplicationContextAware {
             case IS_FALSE:
                 return buildIsFalsePredicate(fieldPath);
             default:
-                log.warn("Unsupported operation: {}", operation);
-                return null;
+                throw new QueryException("Unsupported query operation: " + operation);
         }
+    }
+
+    /**
+     * Throws a QueryException explaining why a given operation cannot be applied to the field type.
+     * Centralises the error message so every helper produces a consistent shape.
+     */
+    private static QueryException unsupportedTypeFor(QueryOperation operation, Object fieldPath, String expectedType) {
+        String actualType = (fieldPath != null) ? fieldPath.getClass().getSimpleName() : "null";
+        return new QueryException(
+                String.format("Operation %s requires a %s field; got %s. Check the QueryOperation/field-type matrix in docs/USER_GUIDE.md.",
+                        operation, expectedType, actualType));
     }
     
     /**
@@ -890,22 +909,15 @@ public class QueryPredicateBuilder implements ApplicationContextAware {
         if (fieldPath instanceof SimpleExpression) {
             return ((SimpleExpression<Object>) fieldPath).eq(value);
         }
-        return null;
+        throw unsupportedTypeFor(QueryOperation.EQUALS, fieldPath, "SimpleExpression");
     }
-    
-    /**
-     * Builds a NOT_EQUALS predicate.
-     * 
-     * @param fieldPath The field path expression
-     * @param value The value to compare against
-     * @return Predicate for NOT_EQUALS operation, or null if fieldPath is not a SimpleExpression
-     */
+
     @SuppressWarnings("unchecked")
     private static Predicate buildNotEqualsPredicate(Object fieldPath, Object value) {
         if (fieldPath instanceof SimpleExpression) {
             return ((SimpleExpression<Object>) fieldPath).ne(value);
         }
-        return null;
+        throw unsupportedTypeFor(QueryOperation.NOT_EQUALS, fieldPath, "SimpleExpression");
     }
     
     /**
@@ -919,105 +931,56 @@ public class QueryPredicateBuilder implements ApplicationContextAware {
         if (fieldPath instanceof StringExpression) {
             return ((StringExpression) fieldPath).contains(value.toString());
         }
-        return null;
+        throw unsupportedTypeFor(QueryOperation.CONTAINS, fieldPath, "StringExpression");
     }
-    
-    /**
-     * Builds a NOT_CONTAINS predicate (case-sensitive).
-     * 
-     * @param fieldPath The field path expression (must be StringExpression)
-     * @param value The substring to exclude
-     * @return Predicate for NOT_CONTAINS operation, or null if fieldPath is not a StringExpression
-     */
+
     private static Predicate buildNotContainsPredicate(Object fieldPath, Object value) {
         if (fieldPath instanceof StringExpression) {
             return ((StringExpression) fieldPath).contains(value.toString()).not();
         }
-        return null;
+        throw unsupportedTypeFor(QueryOperation.NOT_CONTAINS, fieldPath, "StringExpression");
     }
-    
-    /**
-     * Builds a CONTAINS_IGNORE_CASE predicate (case-insensitive substring match).
-     * 
-     * @param fieldPath The field path expression (must be StringExpression)
-     * @param value The substring to search for (case-insensitive)
-     * @return Predicate for CONTAINS_IGNORE_CASE operation, or null if fieldPath is not a StringExpression
-     */
+
     private static Predicate buildContainsIgnoreCasePredicate(Object fieldPath, Object value) {
         if (fieldPath instanceof StringExpression) {
             return ((StringExpression) fieldPath).containsIgnoreCase(value.toString());
         }
-        return null;
+        throw unsupportedTypeFor(QueryOperation.CONTAINS_IGNORE_CASE, fieldPath, "StringExpression");
     }
-    
-    /**
-     * Builds a NOT_CONTAINS_IGNORE_CASE predicate (case-insensitive).
-     * 
-     * @param fieldPath The field path expression (must be StringExpression)
-     * @param value The substring to exclude (case-insensitive)
-     * @return Predicate for NOT_CONTAINS_IGNORE_CASE operation, or null if fieldPath is not a StringExpression
-     */
+
     private static Predicate buildNotContainsIgnoreCasePredicate(Object fieldPath, Object value) {
         if (fieldPath instanceof StringExpression) {
             return ((StringExpression) fieldPath).containsIgnoreCase(value.toString()).not();
         }
-        return null;
+        throw unsupportedTypeFor(QueryOperation.NOT_CONTAINS_IGNORE_CASE, fieldPath, "StringExpression");
     }
-    
-    /**
-     * Builds a STARTS_WITH predicate (case-sensitive prefix match).
-     * 
-     * @param fieldPath The field path expression (must be StringExpression)
-     * @param value The prefix to match
-     * @return Predicate for STARTS_WITH operation, or null if fieldPath is not a StringExpression
-     */
+
     private static Predicate buildStartsWithPredicate(Object fieldPath, Object value) {
         if (fieldPath instanceof StringExpression) {
             return ((StringExpression) fieldPath).startsWith(value.toString());
         }
-        return null;
+        throw unsupportedTypeFor(QueryOperation.STARTS_WITH, fieldPath, "StringExpression");
     }
-    
-    /**
-     * Builds a STARTS_WITH_IGNORE_CASE predicate (case-insensitive prefix match).
-     * 
-     * @param fieldPath The field path expression (must be StringExpression)
-     * @param value The prefix to match (case-insensitive)
-     * @return Predicate for STARTS_WITH_IGNORE_CASE operation, or null if fieldPath is not a StringExpression
-     */
+
     private static Predicate buildStartsWithIgnoreCasePredicate(Object fieldPath, Object value) {
         if (fieldPath instanceof StringExpression) {
             return ((StringExpression) fieldPath).startsWithIgnoreCase(value.toString());
         }
-        return null;
+        throw unsupportedTypeFor(QueryOperation.STARTS_WITH_IGNORE_CASE, fieldPath, "StringExpression");
     }
-    
-    /**
-     * Builds an ENDS_WITH predicate (case-sensitive suffix match).
-     * 
-     * @param fieldPath The field path expression (must be StringExpression)
-     * @param value The suffix to match
-     * @return Predicate for ENDS_WITH operation, or null if fieldPath is not a StringExpression
-     */
+
     private static Predicate buildEndsWithPredicate(Object fieldPath, Object value) {
         if (fieldPath instanceof StringExpression) {
             return ((StringExpression) fieldPath).endsWith(value.toString());
         }
-        return null;
+        throw unsupportedTypeFor(QueryOperation.ENDS_WITH, fieldPath, "StringExpression");
     }
-    
-    /**
-     * Builds an ENDS_WITH_IGNORE_CASE predicate (case-insensitive suffix match).
-     * 
-     * @param fieldPath The field path expression (must be StringExpression)
-     * @param value The suffix to match (case-insensitive)
-     * @return Predicate for ENDS_WITH_IGNORE_CASE operation, or null if fieldPath is not a StringExpression
-     */
+
     private static Predicate buildEndsWithIgnoreCasePredicate(Object fieldPath, Object value) {
         if (fieldPath instanceof StringExpression) {
             return ((StringExpression) fieldPath).endsWithIgnoreCase(value.toString());
         }
-        return null;
+        throw unsupportedTypeFor(QueryOperation.ENDS_WITH_IGNORE_CASE, fieldPath, "StringExpression");
     }
     
     /**
@@ -1034,88 +997,52 @@ public class QueryPredicateBuilder implements ApplicationContextAware {
             ComparableExpression<Comparable> expr = (ComparableExpression<Comparable>) fieldPath;
             return expr.between((Comparable) startValue, (Comparable) endValue);
         }
-        return null;
+        throw unsupportedTypeFor(QueryOperation.BETWEEN, fieldPath, "ComparableExpression");
     }
-    
-    /**
-     * Builds a NOT_BETWEEN predicate (exclusive range).
-     * 
-     * @param fieldPath The field path expression (must be ComparableExpression)
-     * @param startValue The start value
-     * @param endValue The end value
-     * @return Predicate for NOT_BETWEEN operation, or null if fieldPath is not a ComparableExpression
-     */
+
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static Predicate buildNotBetweenPredicate(Object fieldPath, Object startValue, Object endValue) {
         if (fieldPath instanceof ComparableExpression) {
             ComparableExpression<Comparable> expr = (ComparableExpression<Comparable>) fieldPath;
             return expr.between((Comparable) startValue, (Comparable) endValue).not();
         }
-        return null;
+        throw unsupportedTypeFor(QueryOperation.NOT_BETWEEN, fieldPath, "ComparableExpression");
     }
-    
-    /**
-     * Builds a GREATER_THAN predicate (>).
-     * 
-     * @param fieldPath The field path expression (must be ComparableExpression)
-     * @param value The value to compare against
-     * @return Predicate for GREATER_THAN operation, or null if fieldPath is not a ComparableExpression
-     */
+
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static Predicate buildGreaterThanPredicate(Object fieldPath, Object value) {
         if (fieldPath instanceof ComparableExpression) {
             ComparableExpression<Comparable> expr = (ComparableExpression<Comparable>) fieldPath;
             return expr.gt((Comparable) value);
         }
-        return null;
+        throw unsupportedTypeFor(QueryOperation.GREATER_THAN, fieldPath, "ComparableExpression");
     }
-    
-    /**
-     * Builds a GREATER_THAN_OR_EQUAL predicate (>=).
-     * 
-     * @param fieldPath The field path expression (must be ComparableExpression)
-     * @param value The value to compare against
-     * @return Predicate for GREATER_THAN_OR_EQUAL operation, or null if fieldPath is not a ComparableExpression
-     */
+
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static Predicate buildGreaterThanOrEqualPredicate(Object fieldPath, Object value) {
         if (fieldPath instanceof ComparableExpression) {
             ComparableExpression<Comparable> expr = (ComparableExpression<Comparable>) fieldPath;
             return expr.goe((Comparable) value);
         }
-        return null;
+        throw unsupportedTypeFor(QueryOperation.GREATER_THAN_OR_EQUAL, fieldPath, "ComparableExpression");
     }
-    
-    /**
-     * Builds a LESS_THAN predicate (<).
-     * 
-     * @param fieldPath The field path expression (must be ComparableExpression)
-     * @param value The value to compare against
-     * @return Predicate for LESS_THAN operation, or null if fieldPath is not a ComparableExpression
-     */
+
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static Predicate buildLessThanPredicate(Object fieldPath, Object value) {
         if (fieldPath instanceof ComparableExpression) {
             ComparableExpression<Comparable> expr = (ComparableExpression<Comparable>) fieldPath;
             return expr.lt((Comparable) value);
         }
-        return null;
+        throw unsupportedTypeFor(QueryOperation.LESS_THAN, fieldPath, "ComparableExpression");
     }
-    
-    /**
-     * Builds a LESS_THAN_OR_EQUAL predicate (<=).
-     * 
-     * @param fieldPath The field path expression (must be ComparableExpression)
-     * @param value The value to compare against
-     * @return Predicate for LESS_THAN_OR_EQUAL operation, or null if fieldPath is not a ComparableExpression
-     */
+
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static Predicate buildLessThanOrEqualPredicate(Object fieldPath, Object value) {
         if (fieldPath instanceof ComparableExpression) {
             ComparableExpression<Comparable> expr = (ComparableExpression<Comparable>) fieldPath;
             return expr.loe((Comparable) value);
         }
-        return null;
+        throw unsupportedTypeFor(QueryOperation.LESS_THAN_OR_EQUAL, fieldPath, "ComparableExpression");
     }
     
     /**
@@ -1130,89 +1057,64 @@ public class QueryPredicateBuilder implements ApplicationContextAware {
      */
     @SuppressWarnings("unchecked")
     private static Predicate buildInPredicate(Object fieldPath, List<Object> values) {
-        if (fieldPath instanceof SimpleExpression && values != null && !values.isEmpty()) {
-            // Validate size (should already be validated, but double-check for safety)
-            if (values.size() > MAX_IN_VALUES) {
-                throw new IllegalArgumentException(
-                    String.format("IN operation: too many values. Maximum allowed: %d, provided: %d", 
-                        MAX_IN_VALUES, values.size()));
-            }
-            return ((SimpleExpression<Object>) fieldPath).in(values);
+        if (!(fieldPath instanceof SimpleExpression)) {
+            throw unsupportedTypeFor(QueryOperation.IN, fieldPath, "SimpleExpression");
         }
-        if (fieldPath instanceof SimpleExpression && values != null && values.isEmpty()) {
-            log.warn("IN operation with empty list - this will always return no results");
-            // Return a predicate that's always false
-            return ((SimpleExpression<Object>) fieldPath).in(List.of());
+        if (values == null) {
+            throw new QueryException("IN operation requires a 'values' list");
         }
-        return null;
+        if (values.size() > MAX_IN_VALUES) {
+            throw new IllegalArgumentException(
+                    String.format("IN operation: too many values. Maximum allowed: %d, provided: %d",
+                            MAX_IN_VALUES, values.size()));
+        }
+        // Empty list deliberately produces `field IN ()` → matches nothing.
+        return ((SimpleExpression<Object>) fieldPath).in(values);
     }
-    
-    /**
-     * Builds a NOT_IN predicate (value must not be in the provided list).
-     * 
-     * @param fieldPath The field path expression (must be SimpleExpression)
-     * @param values The list of values to exclude
-     * @return Predicate for NOT_IN operation, or null if fieldPath is not a SimpleExpression or values is null/empty
-     */
+
     @SuppressWarnings("unchecked")
     private static Predicate buildNotInPredicate(Object fieldPath, List<Object> values) {
-        if (fieldPath instanceof SimpleExpression && values != null && !values.isEmpty()) {
-            return ((SimpleExpression<Object>) fieldPath).notIn(values);
+        if (!(fieldPath instanceof SimpleExpression)) {
+            throw unsupportedTypeFor(QueryOperation.NOT_IN, fieldPath, "SimpleExpression");
         }
-        return null;
+        if (values == null) {
+            throw new QueryException("NOT_IN operation requires a 'values' list");
+        }
+        if (values.isEmpty()) {
+            // NOT IN of an empty set is universally true; emit an always-true predicate
+            // rather than a no-op null (which used to silently AND-skip).
+            return Expressions.TRUE.isTrue();
+        }
+        return ((SimpleExpression<Object>) fieldPath).notIn(values);
     }
-    
-    /**
-     * Builds an IS_NULL predicate (checks if field is null).
-     * 
-     * @param fieldPath The field path expression (must be SimpleExpression)
-     * @return Predicate for IS_NULL operation, or null if fieldPath is not a SimpleExpression
-     */
+
     @SuppressWarnings("unchecked")
     private static Predicate buildIsNullPredicate(Object fieldPath) {
         if (fieldPath instanceof SimpleExpression) {
             return ((SimpleExpression<Object>) fieldPath).isNull();
         }
-        return null;
+        throw unsupportedTypeFor(QueryOperation.IS_NULL, fieldPath, "SimpleExpression");
     }
-    
-    /**
-     * Builds an IS_NOT_NULL predicate (checks if field is not null).
-     * 
-     * @param fieldPath The field path expression (must be SimpleExpression)
-     * @return Predicate for IS_NOT_NULL operation, or null if fieldPath is not a SimpleExpression
-     */
+
     @SuppressWarnings("unchecked")
     private static Predicate buildIsNotNullPredicate(Object fieldPath) {
         if (fieldPath instanceof SimpleExpression) {
             return ((SimpleExpression<Object>) fieldPath).isNotNull();
         }
-        return null;
+        throw unsupportedTypeFor(QueryOperation.IS_NOT_NULL, fieldPath, "SimpleExpression");
     }
-    
-    /**
-     * Builds an IS_TRUE predicate (checks if boolean field is true).
-     * 
-     * @param fieldPath The field path expression (must be BooleanExpression)
-     * @return Predicate for IS_TRUE operation, or null if fieldPath is not a BooleanExpression
-     */
+
     private static Predicate buildIsTruePredicate(Object fieldPath) {
         if (fieldPath instanceof BooleanExpression) {
             return ((BooleanExpression) fieldPath).isTrue();
         }
-        return null;
+        throw unsupportedTypeFor(QueryOperation.IS_TRUE, fieldPath, "BooleanExpression");
     }
-    
-    /**
-     * Builds an IS_FALSE predicate (checks if boolean field is false).
-     * 
-     * @param fieldPath The field path expression (must be BooleanExpression)
-     * @return Predicate for IS_FALSE operation, or null if fieldPath is not a BooleanExpression
-     */
+
     private static Predicate buildIsFalsePredicate(Object fieldPath) {
         if (fieldPath instanceof BooleanExpression) {
             return ((BooleanExpression) fieldPath).isFalse();
         }
-        return null;
+        throw unsupportedTypeFor(QueryOperation.IS_FALSE, fieldPath, "BooleanExpression");
     }
 }

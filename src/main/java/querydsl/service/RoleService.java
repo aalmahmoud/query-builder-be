@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,6 +27,7 @@ public class RoleService {
     private final GenericQueryService genericQueryService;
 
     @Transactional
+    @PreAuthorize("hasRole('ADMIN')")
     public void addRole(RoleDto roleDto) {
         Role role = roleMapper.toEntity(roleDto);
         roleRepository.save(role);
@@ -33,6 +35,7 @@ public class RoleService {
     }
 
     @Transactional
+    @PreAuthorize("hasRole('ADMIN')")
     public void updateRole(Long id, RoleDto roleDto) {
         Role role = roleRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Role", id));
@@ -42,6 +45,7 @@ public class RoleService {
     }
 
     @Transactional
+    @PreAuthorize("hasRole('ADMIN')")
     public void deleteRole(Long id) {
         if (!roleRepository.existsById(id)) {
             throw new EntityNotFoundException("Role", id);

@@ -5,6 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import querydsl.export.Exportable;
 
 @Entity
 @Table(name = "users")
@@ -12,6 +13,11 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
+@Exportable(fields = {
+        "id", "firstName", "lastName", "email", "mobileNumber", "nationalId", "isActive",
+        "createdDate", "lastModifiedDate", "createdBy", "lastModifiedBy",
+        "role.id", "role.name"
+})
 public class User extends BaseEntity {
 
     @Column(nullable = false, length = 100)

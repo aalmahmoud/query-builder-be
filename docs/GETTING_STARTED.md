@@ -16,13 +16,20 @@ cd querydslbuilder
 ./gradlew build
 ```
 
-### 2. Configure database
+### 2. Configure database and JWT secret
 
 Create a PostgreSQL database and set credentials via environment variables or directly in `application.properties`:
 
 ```bash
 export DB_USERNAME=your_username
 export DB_PASSWORD=your_password
+```
+
+**Required:** set a JWT signing secret of at least 32 bytes (256 bits, HS256 requirement).
+The app refuses to start if this is missing or too short:
+
+```bash
+export JWT_SECRET="$(openssl rand -base64 48)"
 ```
 
 Or edit `src/main/resources/application.properties`:
