@@ -21,7 +21,12 @@ Swagger UI: `http://localhost:8080/swagger-ui.html`. Default seeded login: `admi
 
 ## Architecture
 
-This is a single Gradle module (root project name `querydslbuilder`, package root `querydsl`). Note that `settings.gradle` also declares `include 'generic-querydsl'` pointing to a sibling directory that does not exist on disk — leave this alone unless the user is intentionally extracting the engine into a sub-module.
+This is a **two-module Gradle project** with the engine extracted from the demo:
+
+- **`:generic-querydsl`** — the reusable JSON-driven query engine. Contains `QueryRequest`, `QueryCondition`, `QueryOperation`, `SortField`, `InvalidFieldException`, `QueryPredicateBuilder`, `TypedComputedFieldHandler`, `ComputedFieldHandlerRegistry`, `GenericQueryRepository`, `GenericQueryService`, `QueryException`. Built as a plain `java-library` (no `bootJar`). Wired into consumer apps via `META-INF/spring/.../AutoConfiguration.imports` → `GenericQuerydslAutoConfiguration`, which component-scans the library's packages.
+- **Root project (`querydslbuilder`)** — the reference Spring Boot app. Demonstrates the engine with `User`/`Role`/`Permission` entities, plus JWT auth, JPA auditing, Flyway, export to Excel/PDF, and the four demo computed handlers (`UserFullNameHandler`, etc.). Declares `implementation project(':generic-querydsl')`.
+
+Package names are identical across modules (`querydsl.query.*`, `querydsl.repository.*`, etc.) so import paths in the demo stay unchanged — only the build-time module boundary moved.
 
 The system is a generic JSON-driven query layer over Spring Data JPA + QueryDSL. The key insight: instead of N hand-written `findBy…` methods per entity, every entity gets `query`, `count`, `exists`, and `export/query` endpoints that accept a `QueryRequest` JSON body and run through one shared predicate builder.
 
@@ -43,9 +48,9 @@ POST /<entity>/query  →  Controller  →  Service  →  GenericQueryService
 Critical pieces, by file:
 
 - `query/QueryPredicateBuilder.java` — the engine. Two static `ConcurrentHashMap` caches (`Q_ENTITY_CACHE`, `FIELD_CACHE`) avoid repeated reflection. Hard-coded security limits: `MAX_CONDITIONS=50`, `MAX_FIELD_PATH_DEPTH=5`, `MAX_IN_VALUES=1000`, field names must match `^[a-zA-Z0-9_.]+$`. Date strings are parsed with manual ISO-8601 handling (timezone stripping + millisecond normalization) before being passed to QueryDSL.
-- `repository/GenericQueryRepository.java` — `@NoRepositoryBean` interface with **default methods** (`findAllByQueryRequest`, `countByQueryRequest`, …WithAdditionalPredicates). Each concrete repo must override `getEntityClass()` so the engine can locate the matching Q-class. Default methods reach the predicate builder via `QueryPredicateBuilder.getInstance()` — a static accessor backed by `ApplicationContextAware` and double-checked locking, because default methods cannot use `@Autowired`. Do not remove this static singleton without replacing the lookup mechanism.
+- `repository/GenericQueryRepository.java` — `@NoRepositoryBean` interface with **default methods** (`findAllByQueryRequest`, `countByQueryRequest`, …WithAdditionalPredicates). Each concrete repo must override `getEntityClass()` so the engine can locate the matching Q-class. Default methods reach the predicate builder via `QueryPredicateBuilder.getInstance()`. The static instance is `volatile` and set once during `@PostConstruct` (Spring init thread), so any HTTP request thread sees a fully-constructed bean. There is no lazy `applicationContext.getBean` fallback — if Spring hasn't initialised the bean, `getInstance()` throws.
 - `service/GenericQueryService.java` — thin orchestrator; also converts `QueryRequest.sortFields` into a Spring `Sort` and rebuilds the `Pageable`. If `sortFields` is empty, the controller's `@PageableDefault` sort wins.
-- `query/computed/` — virtual fields. `TypedComputedFieldHandler<T, Q>` is preferred (O(1) registry lookup); `ComputedFieldHandler` is the legacy untyped variant kept for backward compat. The registry auto-discovers both via Spring `@Component` injection; computed fields are checked **before** regular field resolution, so a computed field shadows any same-named entity field. Built-ins: `fullName`, `roleName`, `permissionName` (User), `permissionName` (Role).
+- `query/computed/` — virtual fields. Implement `TypedComputedFieldHandler<T, Q>` and annotate `@Component`; the registry auto-discovers all such beans. Computed fields are checked **before** regular field resolution, so a computed field shadows any same-named entity field. Demo built-ins (stay in the root project): `fullName`, `roleName`, `permissionName` (User), `permissionName` (Role).
 - `model/BaseEntity.java` — every entity extends this; JPA auditing fills `createdDate`/`lastModifiedDate`/`createdBy`/`lastModifiedBy`. `id` is `IDENTITY`-generated.
 - `config/SecurityConfig.java` — stateless JWT, CSRF off, `@EnableMethodSecurity`. Endpoint authorization is wired by URL prefix: `/user/**` → USER/ADMIN/MANAGER, `/role/**` → ADMIN/MANAGER, `/permission/**` → ADMIN. Public: `/auth/login`, `/swagger-ui/**`, `/v3/api-docs/**`, `/actuator/health`, `/actuator/info`. CORS allow-list is hard-coded to localhost dev ports (3000, 4200, 5173, 8080).
 - `security/JwtAuthenticationFilter.java` + `JwtTokenProvider.java` — HS256, claims include comma-separated authorities (roles + permissions). Expiration via `jwt.expiration` (ms; default 24h).
@@ -59,7 +64,8 @@ Critical pieces, by file:
 
 ### Things that bite
 
-- Q-classes are generated into `build/generated/sources/querydsl/java` (added to the main source set in `build.gradle`). After adding/renaming an entity field, run `compileJava` or `build` before referencing the new Q-field.
+- Q-classes are generated into `build/generated/sources/querydsl/java` of the root project (the library has no entities of its own). After adding/renaming an entity field, run `compileJava` or `build` before referencing the new Q-field.
 - `QueryPredicateBuilder` uses **static** caches and a static singleton — they survive across requests but reset on JVM restart. Don't reach into them from tests; if a test needs a clean state, restart the Spring context.
 - `findAllByQueryRequestWithProjection` on `GenericQueryRepository` is `@Deprecated` and performs an unchecked cast — prefer adding a MapStruct mapper instead.
 - The `Q-entity` loader tries camelCase field first (`QUser.user`) then falls back to all-lowercase. Stay on standard QueryDSL naming so this fallback never triggers.
+- The library's `@AutoConfiguration` does a `@ComponentScan` of its own packages. The root project's `@SpringBootApplication` also scans `querydsl.*`. Spring deduplicates by class name, so this overlap is harmless — but if you ever rename the library's package, make sure the auto-config still covers it.

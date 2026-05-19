@@ -1,0 +1,40 @@
+plugins {
+    id 'java-library'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'querydsl'
+version = '0.0.1-SNAPSHOT'
+description = 'Generic JSON-driven QueryDSL engine for Spring Boot.'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencyManagement {
+    imports {
+        mavenBom 'org.springframework.boot:spring-boot-dependencies:3.5.7'
+    }
+}
+
+dependencies {
+    // 'api' so consumers transitively get QueryDSL types and Spring Data interfaces.
+    api 'org.springframework.boot:spring-boot-starter-data-jpa'
+    api 'org.springframework.boot:spring-boot-starter-validation'
+    api 'com.querydsl:querydsl-jpa:5.1.0:jakarta'
+
+    implementation 'org.springframework.boot:spring-boot-autoconfigure'
+
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+}
+
+tasks.named('test', Test) {
+    useJUnitPlatform()
+}
