@@ -1,5 +1,7 @@
 package querydsl.repository;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
@@ -28,4 +30,14 @@ public interface UserRepository extends JpaRepository<User, Long>, GenericQueryR
      */
     @EntityGraph(attributePaths = {"role", "role.permissions"})
     Optional<User> findByEmail(String email);
+
+    /**
+     * Phase 3 fix 3.5: paginated user list eagerly joins {@code role} so the response
+     * mapper does not trigger one extra query per row (N+1) when populating
+     * {@code roleName}. The query-DSL paths inherit the same problem and should be
+     * fixed at the engine layer in a later phase.
+     */
+    @Override
+    @EntityGraph(attributePaths = "role")
+    Page<User> findAll(Pageable pageable);
 }

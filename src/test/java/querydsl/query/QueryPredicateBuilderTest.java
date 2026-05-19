@@ -141,4 +141,35 @@ class QueryPredicateBuilderTest {
         Predicate p = build("firstName", QueryOperation.EQUALS, "John");
         assertEquals("user.firstName = John", p.toString());
     }
+
+    // ---- 3.6: timezone-aware date parsing ----
+
+    @Test
+    void createdDate_withPositiveOffset_convertsToUtc() {
+        // 2025-11-01T03:00:00+03:00 == 2025-11-01T00:00:00 UTC
+        Predicate p = build("createdDate", QueryOperation.EQUALS, "2025-11-01T03:00:00+03:00");
+        assertTrue(p.toString().contains("2025-11-01T00:00"),
+                "Expected UTC-normalised timestamp. Got: " + p);
+    }
+
+    @Test
+    void createdDate_withZuluSuffix_parsesAsUtc() {
+        Predicate p = build("createdDate", QueryOperation.EQUALS, "2025-11-01T12:34:56Z");
+        assertTrue(p.toString().contains("2025-11-01T12:34"),
+                "Z input should be parsed as UTC. Got: " + p);
+    }
+
+    @Test
+    void createdDate_withNegativeOffset_convertsToUtc() {
+        // 2025-11-01T19:00:00-05:00 == 2025-11-02T00:00:00 UTC
+        Predicate p = build("createdDate", QueryOperation.EQUALS, "2025-11-01T19:00:00-05:00");
+        assertTrue(p.toString().contains("2025-11-02T00:00"),
+                "Negative offset should convert to UTC (date may roll over). Got: " + p);
+    }
+
+    @Test
+    void createdDate_dateOnly_parsesToStartOfDay() {
+        Predicate p = build("createdDate", QueryOperation.EQUALS, "2025-11-01");
+        assertTrue(p.toString().contains("2025-11-01T00:00"));
+    }
 }

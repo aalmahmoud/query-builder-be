@@ -23,6 +23,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import querydsl.security.JwtAuthenticationFilter;
+import querydsl.security.LoginRateLimitFilter;
 
 import java.time.LocalDateTime;
 import java.util.Arrays;
@@ -45,6 +46,7 @@ import java.util.Map;
 public class SecurityConfig {
     
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final LoginRateLimitFilter loginRateLimitFilter;
     
     /**
      * Configure security filter chain with JWT authentication.
@@ -67,6 +69,8 @@ public class SecurityConfig {
                 // Public endpoints
                 .requestMatchers(
                         "/auth/login",
+                        "/auth/refresh",
+                        "/auth/logout",
                         "/swagger-ui/**",
                         "/v3/api-docs/**",
                         "/swagger-ui.html",
@@ -92,6 +96,8 @@ public class SecurityConfig {
                 .accessDeniedHandler(accessDeniedHandler())
         );
         
+        // Rate-limit BEFORE JWT, so login flooding is shed before auth work happens.
+        http.addFilterBefore(loginRateLimitFilter, UsernamePasswordAuthenticationFilter.class);
         http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         
         http.httpBasic(AbstractHttpConfigurer::disable);

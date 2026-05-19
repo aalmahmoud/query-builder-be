@@ -4,9 +4,14 @@ import querydsl.dto.RoleDto;
 import querydsl.dto.RoleResponseDto;
 import querydsl.exception.EntityNotFoundException;
 import querydsl.mapper.RoleMapper;
+import querydsl.model.Permission;
 import querydsl.model.Role;
 import querydsl.query.QueryRequest;
+import querydsl.repository.PermissionRepository;
 import querydsl.repository.RoleRepository;
+
+import java.util.HashSet;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -23,13 +28,15 @@ import java.util.List;
 public class RoleService {
 
     private final RoleRepository roleRepository;
+    private final PermissionRepository permissionRepository;
     private final RoleMapper roleMapper;
     private final GenericQueryService genericQueryService;
 
     @Transactional
     @PreAuthorize("hasRole('ADMIN')")
     public void addRole(RoleDto roleDto) {
-        Role role = roleMapper.toEntity(roleDto);
+        Set<Permission> permissions = resolvePermissions(roleDto.getPermissionIds());
+        Role role = roleMapper.toEntity(roleDto, permissions);
         roleRepository.save(role);
         log.info("Role created: {}", role.getName());
     }
@@ -39,9 +46,24 @@ public class RoleService {
     public void updateRole(Long id, RoleDto roleDto) {
         Role role = roleRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Role", id));
-        roleMapper.updateEntityFromDto(roleDto, role);
+        Set<Permission> permissions = roleDto.getPermissionIds() != null
+                ? resolvePermissions(roleDto.getPermissionIds())
+                : null;
+        roleMapper.updateEntityFromDto(roleDto, role, permissions);
         roleRepository.save(role);
         log.info("Role updated: {}", role.getName());
+    }
+
+    private Set<Permission> resolvePermissions(Set<Long> permissionIds) {
+        if (permissionIds == null || permissionIds.isEmpty()) {
+            return new HashSet<>();
+        }
+        Set<Permission> resolved = new HashSet<>(permissionIds.size());
+        for (Long id : permissionIds) {
+            resolved.add(permissionRepository.findById(id)
+                    .orElseThrow(() -> new EntityNotFoundException("Permission", id)));
+        }
+        return resolved;
     }
 
     @Transactional

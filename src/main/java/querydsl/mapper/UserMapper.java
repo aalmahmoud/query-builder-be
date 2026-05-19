@@ -1,33 +1,31 @@
 package querydsl.mapper;
 
+import org.springframework.stereotype.Component;
 import querydsl.dto.UserDto;
 import querydsl.dto.UserResponseDto;
-import querydsl.exception.EntityNotFoundException;
 import querydsl.model.Role;
 import querydsl.model.User;
-import querydsl.repository.RoleRepository;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Component;
 
+/**
+ * Pure transformation between {@link User} and its DTOs.
+ *
+ * <p>Phase 3 fix 3.4: previously this mapper called {@code roleRepository.findById}
+ * to resolve a role-by-id, which made it impossible to unit-test without booting a
+ * repository and entangled persistence with mapping. The service layer
+ * ({@link querydsl.service.UserService}) now resolves the {@link Role} and passes
+ * it in directly.
+ */
 @Component
-@RequiredArgsConstructor
 public class UserMapper {
 
-    private final RoleRepository roleRepository;
-
-    public User toEntity(UserDto userDto) {
+    public User toEntity(UserDto userDto, Role resolvedRole) {
         if (userDto == null) {
             return null;
         }
-
         User user = new User();
-        user.setFirstName(userDto.getFirstName());
-        user.setLastName(userDto.getLastName());
-        user.setEmail(userDto.getEmail());
-        user.setMobileNumber(userDto.getMobileNumber());
-        user.setNationalId(userDto.getNationalId());
+        copyEditableFields(userDto, user);
         user.setIsActive(userDto.getIsActive() != null ? userDto.getIsActive() : true);
-        resolveRole(userDto.getRoleId(), user);
+        user.setRole(resolvedRole);
         return user;
     }
 
@@ -57,27 +55,24 @@ public class UserMapper {
         return dto;
     }
 
-    public void updateEntityFromDto(UserDto userDto, User user) {
+    public void updateEntityFromDto(UserDto userDto, User user, Role resolvedRole) {
         if (userDto == null || user == null) {
             return;
         }
-
-        user.setFirstName(userDto.getFirstName());
-        user.setLastName(userDto.getLastName());
-        user.setEmail(userDto.getEmail());
-        user.setMobileNumber(userDto.getMobileNumber());
-        user.setNationalId(userDto.getNationalId());
+        copyEditableFields(userDto, user);
         if (userDto.getIsActive() != null) {
             user.setIsActive(userDto.getIsActive());
         }
-        resolveRole(userDto.getRoleId(), user);
+        if (resolvedRole != null) {
+            user.setRole(resolvedRole);
+        }
     }
 
-    private void resolveRole(Long roleId, User user) {
-        if (roleId != null) {
-            Role role = roleRepository.findById(roleId)
-                    .orElseThrow(() -> new EntityNotFoundException("Role", roleId));
-            user.setRole(role);
-        }
+    private static void copyEditableFields(UserDto src, User dest) {
+        dest.setFirstName(src.getFirstName());
+        dest.setLastName(src.getLastName());
+        dest.setEmail(src.getEmail());
+        dest.setMobileNumber(src.getMobileNumber());
+        dest.setNationalId(src.getNationalId());
     }
 }

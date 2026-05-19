@@ -24,6 +24,7 @@ import querydsl.repository.UserRepository;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 
 /**
  * Regression tests for Phase 1 fix 1.5: write operations on UserService / RoleService /
@@ -90,7 +91,7 @@ class AuthorizationTest {
     @Test
     @WithMockUser(roles = "ADMIN")
     void admin_canAddUser() {
-        Mockito.when(userMapper.toEntity(any())).thenReturn(new User());
+        Mockito.when(userMapper.toEntity(any(UserDto.class), eq(null))).thenReturn(new User());
         userService.addUser(new UserDto());
         Mockito.verify(userRepository).save(any());
     }
@@ -107,7 +108,7 @@ class AuthorizationTest {
     @Test
     @WithMockUser(roles = "ADMIN")
     void admin_canAddRole() {
-        Mockito.when(roleMapper.toEntity(any())).thenReturn(new Role());
+        Mockito.when(roleMapper.toEntity(any(RoleDto.class), any())).thenReturn(new Role());
         roleService.addRole(new RoleDto());
         Mockito.verify(roleRepository).save(any());
     }

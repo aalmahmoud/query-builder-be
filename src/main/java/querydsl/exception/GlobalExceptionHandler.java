@@ -3,8 +3,11 @@ package querydsl.exception;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
@@ -184,6 +187,92 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
     }
     
+    /**
+     * Handle DataIntegrityViolationException (DB constraint violation) - returns 409 CONFLICT.
+     *
+     * <p>Phase 3 fix 3.8: previously these surfaced as a generic 500. Common offenders are
+     * duplicate {@code email} / {@code nationalId} on users, duplicate role name, and
+     * deleting a role still referenced by users (FK violation). The message is the most
+     * specific cause from Hibernate so the client can react usefully.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrityViolation(
+            DataIntegrityViolationException ex, WebRequest request) {
+
+        String rootMsg = ex.getMostSpecificCause() != null
+                ? ex.getMostSpecificCause().getMessage()
+                : ex.getMessage();
+        String friendly = mapConstraintToFriendlyMessage(rootMsg);
+
+        log.warn("Data integrity violation: {}", rootMsg);
+
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.CONFLICT.value())
+                .error(HttpStatus.CONFLICT.getReasonPhrase())
+                .message(friendly)
+                .path(getPath(request))
+                .build();
+
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(errorResponse);
+    }
+
+    /**
+     * Handle AccessDeniedException - returns 403 FORBIDDEN.
+     *
+     * <p>Phase 3 fix: previously {@code @PreAuthorize} denials fell into the generic 500
+     * branch because Spring re-throws {@link AccessDeniedException} out of the service
+     * layer up to the dispatcher; without a handler the global {@code Exception} fallback
+     * caught it. Explicit handler now produces a proper 403.
+     */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleAccessDenied(
+            AccessDeniedException ex, WebRequest request) {
+
+        log.warn("Access denied for {}: {}",
+                SecurityContextHolder.getContext().getAuthentication() != null
+                        ? SecurityContextHolder.getContext().getAuthentication().getName()
+                        : "anonymous",
+                ex.getMessage());
+
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.FORBIDDEN.value())
+                .error(HttpStatus.FORBIDDEN.getReasonPhrase())
+                .message("You do not have permission to perform this action.")
+                .path(getPath(request))
+                .build();
+
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(errorResponse);
+    }
+
+    private static String mapConstraintToFriendlyMessage(String dbMessage) {
+        if (dbMessage == null) {
+            return "Data integrity constraint violated.";
+        }
+        String lower = dbMessage.toLowerCase();
+        if (lower.contains("users_email_key") || lower.contains("uk_users_email")
+                || (lower.contains("email") && lower.contains("unique"))) {
+            return "A user with that email already exists.";
+        }
+        if (lower.contains("users_national_id_key")
+                || (lower.contains("national_id") && lower.contains("unique"))) {
+            return "A user with that national ID already exists.";
+        }
+        if (lower.contains("roles_name_key")
+                || (lower.contains("name") && lower.contains("unique") && lower.contains("role"))) {
+            return "A role with that name already exists.";
+        }
+        if (lower.contains("permissions_name_key")
+                || (lower.contains("name") && lower.contains("unique") && lower.contains("permission"))) {
+            return "A permission with that name already exists.";
+        }
+        if (lower.contains("fk_user_role")) {
+            return "Cannot modify or delete this role: users still reference it.";
+        }
+        return "Data integrity constraint violated.";
+    }
+
     /**
      * Handle all other exceptions - returns 500 INTERNAL SERVER ERROR
      */

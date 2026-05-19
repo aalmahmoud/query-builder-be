@@ -4,20 +4,20 @@ package querydsl.query;
 import com.querydsl.core.BooleanBuilder;
 import com.querydsl.core.types.Predicate;
 import com.querydsl.core.types.dsl.*;
-import querydsl.exception.QueryException;
-import querydsl.query.computed.ComputedFieldHandlerRegistry;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.ApplicationContext;
-import org.springframework.context.ApplicationContextAware;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import querydsl.exception.QueryException;
+import querydsl.query.computed.ComputedFieldHandlerRegistry;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.List;
@@ -26,57 +26,50 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
 /**
- * Service for building QueryDSL predicates from QueryRequest objects
- * Handles various field types and operations with optimized reflection caching
- * 
- * This is a Spring service that also implements ApplicationContextAware to provide
- * static access for interface default methods (e.g., GenericQueryRepository)
+ * Builds QueryDSL predicates from {@link QueryRequest} objects.
+ *
+ * <p>Spring service. Holds a static reference to the singleton instance so that
+ * {@link querydsl.repository.GenericQueryRepository}'s interface default methods can
+ * reach it without DI (interfaces can't be {@code @Autowired}).
+ *
+ * <p>The static {@code instance} field is {@code volatile} so that a thread reading it
+ * from outside the writer thread (Spring init) sees either {@code null} or a fully
+ * constructed bean — no torn read possible. The Spring-managed write happens in
+ * {@link #registerInstance()} during context startup; any HTTP request thread therefore
+ * sees a non-null instance.
  */
 @Slf4j
 @Service
-public class QueryPredicateBuilder implements ApplicationContextAware {
-    
+public class QueryPredicateBuilder {
+
     private final ComputedFieldHandlerRegistry handlerRegistry;
-    
-    private static ApplicationContext applicationContext;
-    private static QueryPredicateBuilder instance;
-    
+
+    private static volatile QueryPredicateBuilder instance;
+
     @Autowired
     public QueryPredicateBuilder(ComputedFieldHandlerRegistry handlerRegistry) {
         this.handlerRegistry = handlerRegistry;
     }
-    
-    @Override
-    public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
-        QueryPredicateBuilder.applicationContext = applicationContext;
-        // Set static instance for use in interface default methods
+
+    @PostConstruct
+    void registerInstance() {
         QueryPredicateBuilder.instance = this;
     }
-    
+
     /**
-     * Gets the QueryPredicateBuilder service instance.
-     * This static method allows interface default methods (e.g., GenericQueryRepository)
-     * to access the service without dependency injection.
-     * 
-     * Uses double-checked locking pattern for thread safety.
-     * 
-     * @return QueryPredicateBuilder service instance
-     * @throws IllegalStateException if ApplicationContext is not initialized
+     * Returns the Spring-managed singleton.
+     *
+     * @throws IllegalStateException if Spring has not yet initialised the bean
      */
     public static QueryPredicateBuilder getInstance() {
-        if (instance == null) {
-            synchronized (QueryPredicateBuilder.class) {
-                if (instance == null) {
-                    if (applicationContext == null) {
-                        throw new IllegalStateException(
-                            "QueryPredicateBuilder has not been initialized. " +
-                            "Ensure Spring context is loaded and QueryPredicateBuilder is a Spring bean.");
-                    }
-                    instance = applicationContext.getBean(QueryPredicateBuilder.class);
-                }
-            }
+        QueryPredicateBuilder local = instance;
+        if (local == null) {
+            throw new IllegalStateException(
+                    "QueryPredicateBuilder has not been initialised. Ensure the Spring "
+                            + "context is loaded (auto-configured by generic-querydsl, or "
+                            + "imported via @Import(GenericQuerydslAutoConfiguration.class)).");
         }
-        return instance;
+        return local;
     }
     
     // Cache for Q-entity instances (thread-safe, reduces reflection overhead)
@@ -710,83 +703,80 @@ public class QueryPredicateBuilder implements ApplicationContextAware {
     }
     
     /**
-     * Parses a string to LocalDateTime, supporting multiple ISO-8601 formats.
-     * 
-     * Supported formats:
-     * - ISO-8601 with time: "2025-11-01T00:00:00"
-     * - ISO-8601 with milliseconds: "2025-11-01T00:00:00.000"
-     * - ISO-8601 with timezone (Z or offset): "2025-11-01T00:00:00Z", "2025-11-01T00:00:00+03:00"
-     * - Date only (assumes start of day 00:00:00): "2025-11-01"
-     * 
-     * Timezone information is stripped (converted to local time) before parsing.
-     * 
-     * @param value The string value to parse
-     * @return Parsed LocalDateTime, or null if input is null or empty
-     * @throws IllegalArgumentException if the string cannot be parsed as a valid date/time
+     * Parses a string to LocalDateTime.
+     *
+     * <p><strong>Convention:</strong> the engine stores and compares {@code LocalDateTime}
+     * columns as <em>UTC</em>. Input with a timezone (e.g. {@code Z}, {@code +03:00})
+     * is converted to UTC before being treated as a wall-clock {@code LocalDateTime}.
+     * Input without a timezone is interpreted as already-UTC.
+     *
+     * <p>Phase 3 fix 3.6: the previous implementation silently stripped timezone
+     * indicators, which meant {@code "2025-11-01T00:00:00+03:00"} was parsed as
+     * {@code 2025-11-01T00:00:00} server-local time — a 3-hour data-correctness skew
+     * depending on JVM {@code user.timezone}.
+     *
+     * <p>Supported input formats:
+     * <ul>
+     *   <li>ISO-8601 with time: {@code "2025-11-01T00:00:00"} (assumed UTC)</li>
+     *   <li>ISO-8601 with milliseconds: {@code "2025-11-01T00:00:00.000"} (assumed UTC)</li>
+     *   <li>ISO-8601 with UTC marker: {@code "2025-11-01T00:00:00Z"}</li>
+     *   <li>ISO-8601 with offset: {@code "2025-11-01T00:00:00+03:00"} — converted to UTC</li>
+     *   <li>Date only (start of day UTC): {@code "2025-11-01"}</li>
+     * </ul>
+     *
+     * @throws IllegalArgumentException if the input cannot be parsed
      */
     private static LocalDateTime parseLocalDateTime(String value) {
         if (value == null || value.trim().isEmpty()) {
             return null;
         }
-        
         String trimmed = value.trim();
-        
         try {
-            // Remove timezone indicators if present
-            trimmed = removeTimezoneIndicators(trimmed);
-            
-            // Parse based on format
-            if (trimmed.contains("T")) {
-                return parseDateTimeWithTime(trimmed);
-            }
-            
-            // Try parsing as date only
             if (isDateOnlyFormat(trimmed)) {
                 return LocalDate.parse(trimmed).atStartOfDay();
             }
-            
-            // Last attempt: try parsing as ISO-8601 date-time directly
+            if (hasTimezoneIndicator(trimmed)) {
+                return OffsetDateTime.parse(trimmed)
+                        .withOffsetSameInstant(ZoneOffset.UTC)
+                        .toLocalDateTime();
+            }
+            if (trimmed.contains("T")) {
+                return parseDateTimeWithTime(trimmed);
+            }
             return LocalDateTime.parse(trimmed, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
-            
         } catch (DateTimeParseException e) {
             log.error("Could not parse LocalDateTime from string: {}", value);
-            throw new IllegalArgumentException("Invalid date/time format: " + value + 
-                ". Expected format: yyyy-MM-ddTHH:mm:ss or yyyy-MM-dd", e);
+            throw new IllegalArgumentException("Invalid date/time format: " + value
+                    + ". Expected ISO-8601 (e.g. 2025-11-01T00:00:00, 2025-11-01T00:00:00Z, "
+                    + "2025-11-01T00:00:00+03:00, or 2025-11-01).", e);
         }
     }
-    
+
     /**
-     * Removes timezone indicators (Z, +HH:MM, -HH:MM) from date-time string.
-     * 
-     * @param value The date-time string that may contain timezone information
-     * @return Date-time string without timezone indicators
+     * Returns {@code true} if the value carries a timezone indicator after the
+     * date portion (Z, +HH:MM, -HH:MM). The leading {@code yyyy-MM-dd} also
+     * contains dashes, so we only look from {@code ISO_DATE_TIME_T_INDEX} onward.
      */
-    private static String removeTimezoneIndicators(String value) {
-        // Remove UTC indicator (Z)
-        if (value.contains("Z")) {
-            return value.substring(0, value.indexOf('Z'));
+    private static boolean hasTimezoneIndicator(String value) {
+        if (value.length() <= ISO_DATE_TIME_T_INDEX) {
+            return false;
         }
-        
-        // Remove positive timezone offset (+HH:MM)
-        if (value.contains("+")) {
-            int plusIndex = value.indexOf('+');
-            if (plusIndex > ISO_DATE_TIME_T_INDEX) { // After date part
-                return value.substring(0, plusIndex);
+        String afterDate = value.substring(ISO_DATE_TIME_T_INDEX);
+        if (afterDate.indexOf('Z') >= 0) {
+            return true;
+        }
+        if (afterDate.indexOf('+') >= 0) {
+            return true;
+        }
+        // Negative offset like "...T00:00:00-05:00". Skip the 'T' and look for '-'
+        // immediately followed by a digit (rules out the date-internal dashes which
+        // are already past at this point).
+        for (int i = 1; i < afterDate.length() - 1; i++) {
+            if (afterDate.charAt(i) == '-' && Character.isDigit(afterDate.charAt(i + 1))) {
+                return true;
             }
         }
-        
-        // Remove negative timezone offset (-HH:MM)
-        if (value.length() > ISO_DATE_TIME_LENGTH) {
-            int dashIndex = value.indexOf('-', ISO_DATE_TIME_T_INDEX + 1);
-            if (dashIndex > 0 && dashIndex < value.length() - 1) {
-                char nextChar = value.charAt(dashIndex + 1);
-                if (Character.isDigit(nextChar)) {
-                    return value.substring(0, dashIndex);
-                }
-            }
-        }
-        
-        return value;
+        return false;
     }
     
     /**

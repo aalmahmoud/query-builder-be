@@ -4,10 +4,12 @@ import querydsl.dto.UserDto;
 import querydsl.dto.UserResponseDto;
 import querydsl.exception.EntityNotFoundException;
 import querydsl.mapper.UserMapper;
+import querydsl.model.Role;
 import querydsl.model.User;
 import querydsl.query.QueryCondition;
 import querydsl.query.QueryOperation;
 import querydsl.query.QueryRequest;
+import querydsl.repository.RoleRepository;
 import querydsl.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -26,6 +28,7 @@ import java.util.List;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final RoleRepository roleRepository;
     private final UserMapper userMapper;
     private final GenericQueryService genericQueryService;
     private final PasswordEncoder passwordEncoder;
@@ -33,7 +36,8 @@ public class UserService {
     @Transactional
     @PreAuthorize("hasRole('ADMIN')")
     public void addUser(UserDto userDto) {
-        User user = userMapper.toEntity(userDto);
+        Role role = resolveRole(userDto.getRoleId());
+        User user = userMapper.toEntity(userDto, role);
 
         if (userDto.getPassword() != null && !userDto.getPassword().isEmpty()) {
             user.setPassword(passwordEncoder.encode(userDto.getPassword()));
@@ -48,7 +52,8 @@ public class UserService {
     public void updateUser(Long id, UserDto userDto) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("User", id));
-        userMapper.updateEntityFromDto(userDto, user);
+        Role role = resolveRole(userDto.getRoleId());
+        userMapper.updateEntityFromDto(userDto, user, role);
 
         if (userDto.getPassword() != null && !userDto.getPassword().isEmpty()) {
             user.setPassword(passwordEncoder.encode(userDto.getPassword()));
@@ -58,6 +63,27 @@ public class UserService {
         log.info("User updated: {}", user.getEmail());
     }
 
+    /**
+     * Resolves a role-by-id, returning {@code null} if the input is {@code null}
+     * (caller wants no role assignment). Throws {@link EntityNotFoundException} for
+     * a non-null but unknown id so that bad requests fail loud.
+     */
+    private Role resolveRole(Long roleId) {
+        if (roleId == null) {
+            return null;
+        }
+        return roleRepository.findById(roleId)
+                .orElseThrow(() -> new EntityNotFoundException("Role", roleId));
+    }
+
+    /**
+     * Toggles a user's active flag.
+     *
+     * <p><strong>Known issue (deferred to v2):</strong> the endpoint takes no body, so
+     * concurrent callers can race — two simultaneous toggles return state to its
+     * starting value. A future API version will accept {@code {"isActive": false}}
+     * for idempotent semantics. Until then, treat this as fire-once.
+     */
     @Transactional
     @PreAuthorize("hasRole('ADMIN')")
     public void changeUserStatus(Long id) {

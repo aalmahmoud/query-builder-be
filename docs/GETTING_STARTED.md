@@ -73,11 +73,12 @@ The `V2__Seed_data.sql` migration creates default data so you can start testing 
 ## First Login
 
 ```bash
-# Get a JWT token
-TOKEN=$(curl -s -X POST http://localhost:8080/auth/login \
+# Get a JWT access token + refresh token
+RESP=$(curl -s -X POST http://localhost:8080/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"admin@system.com","password":"admin123"}' \
-  | jq -r '.token')
+  -d '{"username":"admin@system.com","password":"admin123"}')
+TOKEN=$(echo "$RESP" | jq -r '.token')
+REFRESH=$(echo "$RESP" | jq -r '.refreshToken')
 
 # Test: list users
 curl http://localhost:8080/user \
@@ -92,6 +93,28 @@ curl -X POST http://localhost:8080/user/query \
       {"field": "isActive", "operation": "IS_TRUE"}
     ]
   }'
+
+# Refresh the access token (the refresh token is rotated on each call):
+RESP=$(curl -s -X POST http://localhost:8080/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d "{\"refreshToken\":\"$REFRESH\"}")
+TOKEN=$(echo "$RESP" | jq -r '.token')
+REFRESH=$(echo "$RESP" | jq -r '.refreshToken')
+
+# Logout (revokes the refresh token):
+curl -X POST http://localhost:8080/auth/logout \
+  -H "Content-Type: application/json" \
+  -d "{\"refreshToken\":\"$REFRESH\"}"
+```
+
+### Rate limit
+
+`POST /auth/login` is rate-limited to **5 attempts per minute per IP**. The 6th request
+in the same minute returns `429 Too Many Requests` with a `Retry-After` header. Override:
+
+```properties
+security.login.rate-limit.capacity=10
+security.login.rate-limit.refill-period-seconds=60
 ```
 
 ## Available Endpoints

@@ -1,34 +1,32 @@
 package querydsl.mapper;
 
+import org.springframework.stereotype.Component;
 import querydsl.dto.RoleDto;
 import querydsl.dto.RoleResponseDto;
-import querydsl.exception.EntityNotFoundException;
 import querydsl.model.Permission;
 import querydsl.model.Role;
-import querydsl.repository.PermissionRepository;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Component;
 
-import java.util.HashSet;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+/**
+ * Pure transformation between {@link Role} and its DTOs.
+ *
+ * <p>Phase 3 fix 3.4: permission resolution moved out of the mapper into
+ * {@link querydsl.service.RoleService}.
+ */
 @Component
-@RequiredArgsConstructor
 public class RoleMapper {
 
-    private final PermissionRepository permissionRepository;
-
-    public Role toEntity(RoleDto roleDto) {
+    public Role toEntity(RoleDto roleDto, Set<Permission> resolvedPermissions) {
         if (roleDto == null) {
             return null;
         }
-
         Role role = new Role();
         role.setName(roleDto.getName());
         role.setDescription(roleDto.getDescription());
         role.setIsActive(roleDto.getIsActive() != null ? roleDto.getIsActive() : true);
-        role.setPermissions(resolvePermissions(roleDto.getPermissionIds()));
+        role.setPermissions(resolvedPermissions != null ? resolvedPermissions : Set.of());
         return role;
     }
 
@@ -62,28 +60,18 @@ public class RoleMapper {
         return dto;
     }
 
-    public void updateEntityFromDto(RoleDto roleDto, Role role) {
+    public void updateEntityFromDto(RoleDto roleDto, Role role, Set<Permission> resolvedPermissions) {
         if (roleDto == null || role == null) {
             return;
         }
-
         role.setName(roleDto.getName());
         role.setDescription(roleDto.getDescription());
         if (roleDto.getIsActive() != null) {
             role.setIsActive(roleDto.getIsActive());
         }
+        // permissionIds == null on input means "leave unchanged"; an empty/non-null set replaces.
         if (roleDto.getPermissionIds() != null) {
-            role.setPermissions(resolvePermissions(roleDto.getPermissionIds()));
+            role.setPermissions(resolvedPermissions != null ? resolvedPermissions : Set.of());
         }
-    }
-
-    private Set<Permission> resolvePermissions(Set<Long> permissionIds) {
-        if (permissionIds == null || permissionIds.isEmpty()) {
-            return new HashSet<>();
-        }
-        return permissionIds.stream()
-                .map(id -> permissionRepository.findById(id)
-                        .orElseThrow(() -> new EntityNotFoundException("Permission", id)))
-                .collect(Collectors.toSet());
     }
 }
