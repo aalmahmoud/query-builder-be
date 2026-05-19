@@ -1,8 +1,12 @@
 package querydsl.security;
 
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.MalformedJwtException;
+import io.jsonwebtoken.UnsupportedJwtException;
 import io.jsonwebtoken.security.Keys;
+import io.jsonwebtoken.security.SignatureException;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -114,7 +118,10 @@ public class JwtTokenProvider {
     }
     
     /**
-     * Validate JWT token
+     * Validate JWT token.
+     *
+     * <p>Phase 4 fix 4.6: log severities are now split so SIEMs can distinguish
+     * routine expirations from possible-forgery signature failures.
      */
     public boolean validateToken(String token) {
         try {
@@ -123,9 +130,24 @@ public class JwtTokenProvider {
                     .build()
                     .parseSignedClaims(token);
             return true;
+        } catch (ExpiredJwtException e) {
+            log.info("Expired JWT presented (subject={})", e.getClaims() != null ? e.getClaims().getSubject() : "?");
+            return false;
+        } catch (SignatureException e) {
+            // Signature mismatch — possible forgery or stale signing key. Worth alerting on.
+            log.warn("JWT signature verification failed: {}", e.getMessage());
+            return false;
+        } catch (MalformedJwtException e) {
+            log.debug("Malformed JWT: {}", e.getMessage());
+            return false;
+        } catch (UnsupportedJwtException e) {
+            log.debug("Unsupported JWT (e.g. wrong algorithm): {}", e.getMessage());
+            return false;
+        } catch (IllegalArgumentException e) {
+            log.debug("Empty or null JWT");
+            return false;
         } catch (Exception e) {
-            int dotCount = token == null ? 0 : token.chars().filter(c -> c == '.').count() > 10 ? -1 : (int) token.chars().filter(c -> c == '.').count();
-            log.error("Invalid JWT token (dots={}, length={}): {}", dotCount, token == null ? 0 : token.length(), e.getMessage());
+            log.error("Unexpected JWT validation failure", e);
             return false;
         }
     }

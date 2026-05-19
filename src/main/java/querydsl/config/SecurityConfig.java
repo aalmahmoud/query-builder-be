@@ -2,6 +2,7 @@ package querydsl.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
@@ -27,6 +28,7 @@ import querydsl.security.LoginRateLimitFilter;
 
 import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -47,6 +49,14 @@ public class SecurityConfig {
     
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final LoginRateLimitFilter loginRateLimitFilter;
+
+    /**
+     * Phase 4 fix 4.11: CORS allow-list moved out of code into properties so prod can
+     * override without a rebuild. Default covers the common local dev ports; production
+     * profile sets this to empty (deny by default).
+     */
+    @Value("${cors.allowed-origins:http://localhost:3000,http://localhost:4200,http://localhost:5173,http://localhost:8080}")
+    private String[] corsAllowedOrigins;
     
     /**
      * Configure security filter chain with JWT authentication.
@@ -103,10 +113,17 @@ public class SecurityConfig {
         http.httpBasic(AbstractHttpConfigurer::disable);
         http.formLogin(AbstractHttpConfigurer::disable);
         
-        // Add security headers
+        // Phase 4 fix 4.12: the previous CSP ("default-src 'self'") blocked Swagger UI's
+        // inline scripts and styles. Allow inline for script/style so /swagger-ui/** works.
+        // 'unsafe-inline' is acceptable here because the app is API-only — no user-supplied
+        // HTML is ever served. Tighten further in v2 with nonces if we host any HTML.
         http.headers(headers -> headers
                 .frameOptions(frame -> frame.deny())
-                .contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'self'"))
+                .contentSecurityPolicy(csp -> csp.policyDirectives(
+                        "default-src 'self'; "
+                                + "script-src 'self' 'unsafe-inline'; "
+                                + "style-src 'self' 'unsafe-inline'; "
+                                + "img-src 'self' data:"))
         );
         
         return http.build();
@@ -118,18 +135,19 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(Arrays.asList(
-                "http://localhost:3000",  // React default
-                "http://localhost:4200",  // Angular default
-                "http://localhost:8080",   // Same origin
-                "http://localhost:5173"    // Vite default
-        ));
+        // Filter out empty strings so an empty env var (CORS_ALLOWED_ORIGINS="") becomes
+        // a deny-all configuration rather than a single empty-string origin.
+        List<String> origins = Arrays.stream(corsAllowedOrigins)
+                .filter(o -> o != null && !o.isBlank())
+                .map(String::trim)
+                .toList();
+        configuration.setAllowedOrigins(origins);
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         configuration.setAllowedHeaders(Arrays.asList("*"));
         configuration.setExposedHeaders(Arrays.asList("Authorization", "X-CSRF-TOKEN"));
         configuration.setAllowCredentials(true);
         configuration.setMaxAge(3600L);
-        
+
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;

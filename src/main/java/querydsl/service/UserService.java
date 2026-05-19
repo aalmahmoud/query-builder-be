@@ -11,6 +11,7 @@ import querydsl.query.QueryOperation;
 import querydsl.query.QueryRequest;
 import querydsl.repository.RoleRepository;
 import querydsl.repository.UserRepository;
+import querydsl.security.EncryptionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -32,6 +33,7 @@ public class UserService {
     private final UserMapper userMapper;
     private final GenericQueryService genericQueryService;
     private final PasswordEncoder passwordEncoder;
+    private final EncryptionService encryptionService;
 
     @Transactional
     @PreAuthorize("hasRole('ADMIN')")
@@ -42,6 +44,9 @@ public class UserService {
         if (userDto.getPassword() != null && !userDto.getPassword().isEmpty()) {
             user.setPassword(passwordEncoder.encode(userDto.getPassword()));
         }
+        // Phase 4 fix 4.15: keep the deterministic HMAC in lock-step with nationalId
+        // for the unique index + later equality lookups.
+        user.setNationalIdHash(encryptionService.hmac(user.getNationalId()));
 
         userRepository.save(user);
         log.info("User created: {}", user.getEmail());
@@ -58,6 +63,7 @@ public class UserService {
         if (userDto.getPassword() != null && !userDto.getPassword().isEmpty()) {
             user.setPassword(passwordEncoder.encode(userDto.getPassword()));
         }
+        user.setNationalIdHash(encryptionService.hmac(user.getNationalId()));
 
         userRepository.save(user);
         log.info("User updated: {}", user.getEmail());

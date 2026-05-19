@@ -53,23 +53,23 @@ public class CustomUserDetailsService implements UserDetailsService {
     }
     
     /**
-     * Get authorities from user's role and permissions
+     * Phase 4 fix 4.1: a soft-deleted (isActive=false) role grants no authorities, and an
+     * inactive permission is skipped. Previously isActive existed on the schema but was
+     * never consulted, so soft-deleted records remained effective at runtime.
      */
     private Collection<GrantedAuthority> getAuthorities(User user) {
-        Stream<String> roleAuthorities = Stream.empty();
-        Stream<String> permissionAuthorities = Stream.empty();
-        
-        // Add role authority if user has a role
-        if (user.getRole() != null) {
-            roleAuthorities = Stream.of("ROLE_" + user.getRole().getName().toUpperCase());
-            
-            // Add permission authorities if role has permissions
-            if (user.getRole().getPermissions() != null && !user.getRole().getPermissions().isEmpty()) {
-                permissionAuthorities = user.getRole().getPermissions().stream()
-                        .map(permission -> permission.getResource() + ":" + permission.getAction());
-            }
+        if (user.getRole() == null || Boolean.FALSE.equals(user.getRole().getIsActive())) {
+            return java.util.Collections.emptyList();
         }
-        
+        Stream<String> roleAuthorities = Stream.of("ROLE_" + user.getRole().getName().toUpperCase());
+
+        Stream<String> permissionAuthorities = Stream.empty();
+        if (user.getRole().getPermissions() != null && !user.getRole().getPermissions().isEmpty()) {
+            permissionAuthorities = user.getRole().getPermissions().stream()
+                    .filter(p -> !Boolean.FALSE.equals(p.getIsActive()))
+                    .map(p -> p.getResource() + ":" + p.getAction());
+        }
+
         return Stream.concat(roleAuthorities, permissionAuthorities)
                 .map(SimpleGrantedAuthority::new)
                 .collect(Collectors.toList());

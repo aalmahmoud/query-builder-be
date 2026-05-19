@@ -58,7 +58,8 @@ public class QueryCondition {
     /**
      * List of values for operations like IN, NOT_IN
      */
-    @Size(max = 1000, message = "Maximum 1000 values allowed in IN operation")
+    // Keep this constant in sync with QueryPredicateBuilder.MAX_IN_VALUES.
+    @Size(max = 200, message = "Maximum 200 values allowed in IN operation")
     private List<Object> values;
     
     /**

@@ -21,7 +21,13 @@ public interface UserRepository extends JpaRepository<User, Long>, GenericQueryR
         return User.class;
     }
 
-    Optional<User> findByNationalId(String nationalId);
+    /**
+     * Phase 4 fix 4.15: lookup by national ID goes through the deterministic HMAC
+     * companion column. Call sites compute the hash via {@code EncryptionService.hmac}
+     * before invoking this. The plaintext column is encrypted with a per-row IV and
+     * cannot be queried directly.
+     */
+    Optional<User> findByNationalIdHash(String nationalIdHash);
 
     /**
      * Eagerly fetches role + permissions so that {@code CustomUserDetailsService}

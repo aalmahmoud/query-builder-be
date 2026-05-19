@@ -32,6 +32,17 @@ The app refuses to start if this is missing or too short:
 export JWT_SECRET="$(openssl rand -base64 48)"
 ```
 
+**Also required:** an AES-256 key for column-level PII encryption (national IDs).
+32 bytes, base64-encoded:
+
+```bash
+export APP_ENCRYPTION_KEY="$(openssl rand -base64 32)"
+```
+
+> :warning: Losing or rotating `APP_ENCRYPTION_KEY` requires a coordinated re-encryption
+> of every {`users.national_id`} ciphertext — there is no key rotation tooling in this
+> project yet. Treat it like a production secret.
+
 Or edit `src/main/resources/application.properties`:
 
 ```properties

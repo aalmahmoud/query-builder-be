@@ -30,32 +30,41 @@
         </rollingPolicy>
     </appender>
 
-    <!-- Log levels by package -->
-    <logger name="querydsl" level="DEBUG"/>
+    <!-- Default (no profile / dev). Verbose for local hacking. -->
+    <logger name="querydsl" level="INFO"/>
     <logger name="org.springframework.web" level="INFO"/>
-    <logger name="org.springframework.security" level="DEBUG"/>
+    <logger name="org.springframework.security" level="INFO"/>
     <logger name="org.hibernate" level="WARN"/>
     <logger name="org.flywaydb" level="INFO"/>
-    <logger name="com.querydsl" level="DEBUG"/>
+    <logger name="com.querydsl" level="INFO"/>
 
-    <!-- Root logger -->
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
         <appender-ref ref="FILE"/>
     </root>
 
-    <!-- Profile-specific overrides -->
+    <!--
+        Phase 4 fix 4.7: previously the package loggers were DEBUG by default,
+        which meant production logs leaked condition values + auth flow details.
+        Verbose logging is now opt-in via the dev profile.
+    -->
     <springProfile name="dev">
+        <logger name="querydsl" level="DEBUG"/>
+        <logger name="org.springframework.security" level="DEBUG"/>
+        <logger name="com.querydsl" level="DEBUG"/>
         <root level="DEBUG">
             <appender-ref ref="CONSOLE"/>
         </root>
     </springProfile>
 
     <springProfile name="prod">
+        <logger name="querydsl" level="INFO"/>
+        <logger name="org.springframework.web" level="WARN"/>
+        <logger name="org.springframework.security" level="WARN"/>
+        <logger name="com.querydsl" level="WARN"/>
+        <logger name="org.hibernate" level="WARN"/>
         <root level="INFO">
             <appender-ref ref="FILE"/>
         </root>
-        <logger name="org.springframework.web" level="WARN"/>
-        <logger name="org.springframework.security" level="WARN"/>
     </springProfile>
 </configuration>

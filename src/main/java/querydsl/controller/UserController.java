@@ -9,13 +9,16 @@ import querydsl.query.QueryRequest;
 import querydsl.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
+import jakarta.validation.groups.Default;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import querydsl.dto.validation.OnCreate;
 
 import java.util.List;
 
@@ -29,7 +32,8 @@ public class UserController {
 
     @PostMapping
     @Operation(summary = "Add a new user")
-    public ResponseEntity<Void> addUser(@Valid @RequestBody UserDto userDto) {
+    public ResponseEntity<Void> addUser(
+            @Validated({OnCreate.class, Default.class}) @RequestBody UserDto userDto) {
         userService.addUser(userDto);
         return ResponseEntity.ok().build();
     }

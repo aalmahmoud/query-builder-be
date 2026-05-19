@@ -32,6 +32,7 @@ class RefreshTokenServiceTest {
     @Autowired private RefreshTokenRepository refreshTokenRepository;
     @Autowired private UserRepository userRepository;
     @Autowired private RoleRepository roleRepository;
+    @Autowired private EncryptionService encryptionService;
 
     private User user;
 
@@ -51,6 +52,7 @@ class RefreshTokenServiceTest {
         user.setLastName("Tester");
         user.setEmail("refresh@test.local");
         user.setNationalId("rt-1");
+        user.setNationalIdHash(encryptionService.hmac("rt-1"));
         user.setIsActive(true);
         user.setPassword("$2a$10$hash");
         user.setRole(role);

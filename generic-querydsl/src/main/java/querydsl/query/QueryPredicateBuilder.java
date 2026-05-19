@@ -14,14 +14,20 @@ import querydsl.query.computed.ComputedFieldHandlerRegistry;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
@@ -84,8 +90,10 @@ public class QueryPredicateBuilder {
     // Maximum depth of nested field paths (e.g., "role.name" = depth 2)
     private static final int MAX_FIELD_PATH_DEPTH = 5;
     
-    // Maximum number of values allowed in IN operations (prevents memory exhaustion)
-    private static final int MAX_IN_VALUES = 1000;
+    // Maximum number of values allowed in IN operations (prevents memory exhaustion and
+    // pathological query plans). Phase 4 fix 4.4: lowered from 1000 to 200 — JDBC drivers
+    // and the planner choke long before 1000 in most cases.
+    private static final int MAX_IN_VALUES = 200;
     
     // Field name validation pattern: alphanumeric, underscore, and dot only
     private static final Pattern FIELD_NAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_.]+$");
@@ -645,63 +653,75 @@ public class QueryPredicateBuilder {
         if (value == null) {
             return null;
         }
-        
-        try {
-            // Get the field type from the QueryDSL path
-            if (fieldPath instanceof SimpleExpression) {
-                SimpleExpression<?> expr = (SimpleExpression<?>) fieldPath;
-                Class<?> fieldType = expr.getType();
-                
-                // Handle enum types
-                if (fieldType.isEnum() && value instanceof String) {
-                    @SuppressWarnings({"unchecked", "rawtypes"})
-                    Class<? extends Enum> enumClass = (Class<? extends Enum>) fieldType;
-                    return Enum.valueOf((Class) enumClass, (String) value);
-                }
-                
-                // Handle date/time types
-                if (value instanceof String) {
-                    String stringValue = (String) value;
-                    
-                    if (fieldType == LocalDateTime.class) {
-                        return parseLocalDateTime(stringValue);
-                    }
-                    if (fieldType == LocalDate.class) {
-                        return parseLocalDate(stringValue);
-                    }
-                }
-                
-                // Handle other type conversions
-                if (fieldType == Long.class && value instanceof String) {
-                    return Long.valueOf((String) value);
-                }
-                if (fieldType == Integer.class && value instanceof String) {
-                    return Integer.valueOf((String) value);
-                }
-                if (fieldType == Boolean.class && value instanceof String) {
-                    return Boolean.valueOf((String) value);
-                }
-                if (fieldType == Double.class && value instanceof String) {
-                    return Double.valueOf((String) value);
-                }
-                if (fieldType == Float.class && value instanceof String) {
-                    return Float.valueOf((String) value);
-                }
-            }
-            
-            // Return the original value if no conversion is needed
+        if (!(fieldPath instanceof SimpleExpression)) {
             return value;
-            
+        }
+        Class<?> fieldType = ((SimpleExpression<?>) fieldPath).getType();
+        // Already the right type — short-circuit. Most ID/numeric inputs hit this.
+        if (fieldType.isInstance(value)) {
+            return value;
+        }
+        if (!(value instanceof String)) {
+            return value; // numeric clients pass numbers directly; nothing to do
+        }
+        String stringValue = (String) value;
+
+        try {
+            if (fieldType.isEnum()) {
+                return parseEnumLenient(fieldType, stringValue);
+            }
+            // Date / time
+            if (fieldType == LocalDateTime.class) return parseLocalDateTime(stringValue);
+            if (fieldType == LocalDate.class)     return parseLocalDate(stringValue);
+            if (fieldType == LocalTime.class)     return LocalTime.parse(stringValue);
+            if (fieldType == Instant.class)       return Instant.parse(stringValue);
+            if (fieldType == OffsetDateTime.class) return OffsetDateTime.parse(stringValue);
+            if (fieldType == ZonedDateTime.class)  return ZonedDateTime.parse(stringValue);
+            // Numbers
+            if (fieldType == Long.class)       return Long.valueOf(stringValue);
+            if (fieldType == Integer.class)    return Integer.valueOf(stringValue);
+            if (fieldType == Short.class)      return Short.valueOf(stringValue);
+            if (fieldType == Byte.class)       return Byte.valueOf(stringValue);
+            if (fieldType == Double.class)     return Double.valueOf(stringValue);
+            if (fieldType == Float.class)      return Float.valueOf(stringValue);
+            if (fieldType == BigDecimal.class) return new BigDecimal(stringValue);
+            if (fieldType == BigInteger.class) return new BigInteger(stringValue);
+            // Other
+            if (fieldType == Boolean.class)    return Boolean.valueOf(stringValue);
+            if (fieldType == UUID.class)       return UUID.fromString(stringValue);
+            // Unknown — return as-is and let QueryDSL choke meaningfully.
+            return stringValue;
         } catch (IllegalArgumentException e) {
-            // Re-throw IllegalArgumentException as-is (e.g., invalid date format)
             throw e;
         } catch (Exception e) {
-            log.error("Could not convert value {} to field type: {}", value, e.getMessage(), e);
+            log.error("Could not convert value {} to field type {}: {}", value, fieldType, e.getMessage(), e);
             throw new IllegalArgumentException(
-                String.format("Type conversion failed for value '%s': %s", value, e.getMessage()), e);
+                    String.format("Type conversion failed for value '%s' (target %s): %s",
+                            value, fieldType.getSimpleName(), e.getMessage()), e);
         }
     }
     
+    /**
+     * Parses an enum value leniently: first by exact name match, then case-insensitive.
+     * Phase 4 fix 4.5: previously case-sensitive only, so {@code "admin"} on a {@code Role}
+     * enum failed with an opaque {@code IllegalArgumentException}.
+     */
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static Object parseEnumLenient(Class<?> enumClass, String value) {
+        try {
+            return Enum.valueOf((Class<? extends Enum>) enumClass, value);
+        } catch (IllegalArgumentException ignored) {
+            // Fallback: case-insensitive
+            for (Object constant : enumClass.getEnumConstants()) {
+                if (((Enum) constant).name().equalsIgnoreCase(value)) {
+                    return constant;
+                }
+            }
+            throw new IllegalArgumentException(
+                    "Unknown enum value '" + value + "' for " + enumClass.getSimpleName());
+        }
+    }
+
     /**
      * Parses a string to LocalDateTime.
      *

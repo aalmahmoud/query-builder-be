@@ -42,6 +42,7 @@ class CustomUserDetailsServiceTest {
     @Autowired private UserRepository userRepository;
     @Autowired private RoleRepository roleRepository;
     @Autowired private PermissionRepository permissionRepository;
+    @Autowired private querydsl.security.EncryptionService encryptionService;
 
     @BeforeEach
     void wipe() {
@@ -71,6 +72,7 @@ class CustomUserDetailsServiceTest {
         user.setLastName("Admin");
         user.setEmail("admin@test.local");
         user.setNationalId("999");
+        user.setNationalIdHash(encryptionService.hmac("999"));
         user.setIsActive(true);
         user.setPassword("$2a$10$irrelevant");
         user.setRole(role);

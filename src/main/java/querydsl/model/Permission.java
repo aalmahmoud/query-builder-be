@@ -6,6 +6,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import querydsl.export.Exportable;
+import querydsl.query.SortableFields;
 
 @Entity
 @Table(name = "permissions")
@@ -16,6 +17,9 @@ import querydsl.export.Exportable;
 @Exportable(fields = {
         "id", "name", "resource", "action", "description", "isActive",
         "createdDate", "lastModifiedDate", "createdBy", "lastModifiedBy"
+})
+@SortableFields({
+        "id", "name", "resource", "action", "isActive", "createdDate", "lastModifiedDate"
 })
 public class Permission extends BaseEntity {
 

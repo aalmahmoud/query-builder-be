@@ -2,17 +2,21 @@ package querydsl.service;
 
 
 import com.querydsl.core.BooleanBuilder;
-import querydsl.query.QueryRequest;
-import querydsl.query.SortField;
-import querydsl.repository.GenericQueryRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import querydsl.exception.QueryException;
+import querydsl.query.QueryRequest;
+import querydsl.query.SortField;
+import querydsl.query.SortableFields;
+import querydsl.repository.GenericQueryRepository;
 
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Generic service for QueryDSL operations
@@ -37,7 +41,7 @@ public class GenericQueryService {
         log.debug("Finding entities with query request: {} and pageable: {}", queryRequest, pageable);
 
         // Apply sorting from query request if provided
-        Pageable finalPageable = applySortingFromQueryRequest(queryRequest, pageable);
+        Pageable finalPageable = applySortingFromQueryRequest(queryRequest, pageable, repository.getEntityClass());
 
         return repository.findAllByQueryRequest(queryRequest, finalPageable);
     }
@@ -110,7 +114,7 @@ public class GenericQueryService {
                 queryRequest, pageable);
 
         // Apply sorting from query request if provided
-        Pageable finalPageable = applySortingFromQueryRequest(queryRequest, pageable);
+        Pageable finalPageable = applySortingFromQueryRequest(queryRequest, pageable, repository.getEntityClass());
 
         return repository.findAllByQueryRequestWithAdditionalPredicates(queryRequest, additionalPredicates, finalPageable);
     }
@@ -161,13 +165,29 @@ public class GenericQueryService {
     }
 
     /**
-     * Apply sorting from QueryRequest to Pageable
-     * If QueryRequest has sort fields, they will be applied
-     * Otherwise, the original Pageable sorting will be used
+     * Apply sorting from QueryRequest to Pageable.
+     *
+     * <p>Phase 4 fix 4.2: every requested sort field is validated against the entity's
+     * {@link SortableFields @SortableFields} allow-list. Entities without the annotation
+     * fall back to a conservative default of {@code "id"} and {@code "createdDate"}.
+     * Unknown fields produce a 400 with a parseable message rather than running a
+     * pathological JOIN.
      */
-    private Pageable applySortingFromQueryRequest(QueryRequest queryRequest, Pageable pageable) {
+    private Pageable applySortingFromQueryRequest(QueryRequest queryRequest, Pageable pageable, Class<?> entityClass) {
         if (queryRequest == null || queryRequest.getSortFields() == null || queryRequest.getSortFields().isEmpty()) {
             return pageable;
+        }
+
+        Set<String> allowed = sortableFieldsOf(entityClass);
+        for (SortField sf : queryRequest.getSortFields()) {
+            if (sf == null || sf.getField() == null) {
+                continue;
+            }
+            if (!allowed.contains(sf.getField())) {
+                throw new QueryException(
+                        "Sort field '" + sf.getField() + "' is not allowed on "
+                                + entityClass.getSimpleName() + ". Allowed: " + allowed);
+            }
         }
 
         List<Sort.Order> orders = queryRequest.getSortFields().stream()
@@ -181,11 +201,27 @@ public class GenericQueryService {
 
         Sort sort = Sort.by(orders);
 
-        // Create new Pageable with the custom sort
         return org.springframework.data.domain.PageRequest.of(
                 pageable.getPageNumber(),
                 pageable.getPageSize(),
                 sort
         );
+    }
+
+    /** Defensive fallback when an entity ships without an explicit allow-list. */
+    private static final Set<String> DEFAULT_SORTABLE_FIELDS = Set.of("id", "createdDate");
+
+    private static final java.util.Map<Class<?>, Set<String>> SORTABLE_CACHE = new ConcurrentHashMap<>();
+
+    private static Set<String> sortableFieldsOf(Class<?> entityClass) {
+        return SORTABLE_CACHE.computeIfAbsent(entityClass, c -> {
+            for (Class<?> cur = c; cur != null && cur != Object.class; cur = cur.getSuperclass()) {
+                SortableFields ann = cur.getAnnotation(SortableFields.class);
+                if (ann != null) {
+                    return Set.of(ann.value());
+                }
+            }
+            return DEFAULT_SORTABLE_FIELDS;
+        });
     }
 }
