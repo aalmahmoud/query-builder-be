@@ -66,7 +66,7 @@ class AuthorizationTest {
     @Test
     @WithMockUser(roles = "USER")
     void user_cannotChangeUserStatus() {
-        assertThrows(AccessDeniedException.class, () -> userService.changeUserStatus(1L));
+        assertThrows(AccessDeniedException.class, () -> userService.changeUserStatus(1L, false));
     }
 
     @Test

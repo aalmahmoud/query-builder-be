@@ -92,21 +92,20 @@ public class UserService {
     }
 
     /**
-     * Toggles a user's active flag.
+     * Sets a user's active flag to an absolute target state (review fix 4.9).
      *
-     * <p><strong>Known issue (deferred to v2):</strong> the endpoint takes no body, so
-     * concurrent callers can race — two simultaneous toggles return state to its
-     * starting value. A future API version will accept {@code {"isActive": false}}
-     * for idempotent semantics. Until then, treat this as fire-once.
+     * <p>Taking the desired {@code isActive} value rather than toggling makes the
+     * operation idempotent: repeated or concurrent calls converge on the same state
+     * instead of racing back to where they started.
      */
     @Transactional
     @PreAuthorize("hasRole('ADMIN')")
-    public void changeUserStatus(Long id) {
+    public void changeUserStatus(Long id, boolean isActive) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("User", id));
-        user.setIsActive(!user.getIsActive());
+        user.setIsActive(isActive);
         userRepository.save(user);
-        log.info("User status changed: {} -> {}", user.getEmail(), user.getIsActive());
+        log.info("User status set: {} -> {}", user.getEmail(), isActive);
     }
 
     @Transactional

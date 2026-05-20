@@ -1,5 +1,6 @@
 package querydsl.controller;
 
+import querydsl.dto.ChangeUserStatusRequest;
 import querydsl.dto.UserDto;
 import querydsl.dto.UserResponseDto;
 import querydsl.export.ExportService;
@@ -70,9 +71,10 @@ public class UserController {
     }
 
     @PutMapping("/{id}/change-status")
-    @Operation(summary = "Toggle user active/inactive status")
-    public ResponseEntity<Void> changeUserStatus(@PathVariable Long id) {
-        userService.changeUserStatus(id);
+    @Operation(summary = "Set user active/inactive status")
+    public ResponseEntity<Void> changeUserStatus(
+            @PathVariable Long id, @Valid @RequestBody ChangeUserStatusRequest request) {
+        userService.changeUserStatus(id, request.getIsActive());
         return ResponseEntity.ok().build();
     }
 
