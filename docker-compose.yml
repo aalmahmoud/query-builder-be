@@ -1,0 +1,28 @@
+# Local Postgres for query-builder-be.
+#
+#   cp .env.example .env      # then fill in the secrets
+#   docker compose up -d      # starts Postgres on localhost:5432
+#
+# The app itself is meant to be run from IntelliJ / `./gradlew bootRun`; this
+# compose only provides the database. Flyway creates the schema + seed data
+# inside query_builder_db on the app's first start.
+services:
+  postgres:
+    image: postgres:16
+    container_name: qb-postgres
+    environment:
+      POSTGRES_DB: query_builder_db
+      POSTGRES_USER: ${DB_USERNAME:-qb}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-qb}
+    ports:
+      - "5432:5432"
+    volumes:
+      - qb-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-qb} -d query_builder_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  qb-pgdata:

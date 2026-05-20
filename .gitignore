@@ -39,3 +39,7 @@ out/
 ### Application logs ###
 logs/
 *.log
+
+### Local environment (never commit real secrets) ###
+.env
+!.env.example
