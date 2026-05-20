@@ -28,10 +28,13 @@ public class PermissionService {
 
     @Transactional
     @PreAuthorize("hasRole('ADMIN')")
-    public void addPermission(PermissionDto permissionDto) {
+    public PermissionResponseDto addPermission(PermissionDto permissionDto) {
         Permission permission = permissionMapper.toEntity(permissionDto);
+        // Review fix 5.13: return the created resource for a 201 Created response.
+        // IDENTITY generation populates permission.id on save, so map the same instance.
         permissionRepository.save(permission);
         log.info("Permission created: {}", permission.getName());
+        return permissionMapper.toPermissionResponseDto(permission);
     }
 
     @Transactional

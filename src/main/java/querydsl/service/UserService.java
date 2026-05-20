@@ -38,7 +38,7 @@ public class UserService {
 
     @Transactional
     @PreAuthorize("hasRole('ADMIN')")
-    public void addUser(UserDto userDto) {
+    public UserResponseDto addUser(UserDto userDto) {
         Role role = resolveRole(userDto.getRoleId());
         User user = userMapper.toEntity(userDto, role);
         // Phase 5 fix 5.16: normalise email so "Foo@Bar.com" and "foo@bar.com" don't
@@ -52,8 +52,12 @@ public class UserService {
         // for the unique index + later equality lookups.
         user.setNationalIdHash(encryptionService.hmac(user.getNationalId()));
 
+        // Review fix 5.13: return the created resource so the controller can answer
+        // 201 Created with a Location header and body instead of an empty 200.
+        // IDENTITY generation populates user.id on save, so map the same instance.
         userRepository.save(user);
         log.info("User created: {}", user.getEmail());
+        return userMapper.toUserResponseDto(user);
     }
 
     @Transactional

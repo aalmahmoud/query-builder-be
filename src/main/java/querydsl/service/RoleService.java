@@ -34,11 +34,14 @@ public class RoleService {
 
     @Transactional
     @PreAuthorize("hasRole('ADMIN')")
-    public void addRole(RoleDto roleDto) {
+    public RoleResponseDto addRole(RoleDto roleDto) {
         Set<Permission> permissions = resolvePermissions(roleDto.getPermissionIds());
         Role role = roleMapper.toEntity(roleDto, permissions);
+        // Review fix 5.13: return the created resource for a 201 Created response.
+        // IDENTITY generation populates role.id on save, so map the same instance.
         roleRepository.save(role);
         log.info("Role created: {}", role.getName());
+        return roleMapper.toRoleResponseDto(role);
     }
 
     @Transactional

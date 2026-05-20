@@ -17,7 +17,9 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
+import java.net.URI;
 import java.util.List;
 
 @RestController
@@ -31,9 +33,11 @@ public class RoleController {
 
     @PostMapping
     @Operation(summary = "Add a new role")
-    public ResponseEntity<Void> addRole(@Valid @RequestBody RoleDto roleDto) {
-        roleService.addRole(roleDto);
-        return ResponseEntity.ok().build();
+    public ResponseEntity<RoleResponseDto> addRole(@Valid @RequestBody RoleDto roleDto) {
+        RoleResponseDto created = roleService.addRole(roleDto);
+        URI location = ServletUriComponentsBuilder.fromCurrentRequest()
+                .path("/{id}").buildAndExpand(created.getId()).toUri();
+        return ResponseEntity.created(location).body(created);
     }
 
     @GetMapping

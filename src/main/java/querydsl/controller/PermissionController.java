@@ -17,7 +17,9 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
+import java.net.URI;
 import java.util.List;
 
 @RestController
@@ -31,9 +33,11 @@ public class PermissionController {
 
     @PostMapping
     @Operation(summary = "Add a new permission")
-    public ResponseEntity<Void> addPermission(@Valid @RequestBody PermissionDto permissionDto) {
-        permissionService.addPermission(permissionDto);
-        return ResponseEntity.ok().build();
+    public ResponseEntity<PermissionResponseDto> addPermission(@Valid @RequestBody PermissionDto permissionDto) {
+        PermissionResponseDto created = permissionService.addPermission(permissionDto);
+        URI location = ServletUriComponentsBuilder.fromCurrentRequest()
+                .path("/{id}").buildAndExpand(created.getId()).toUri();
+        return ResponseEntity.created(location).body(created);
     }
 
     @GetMapping

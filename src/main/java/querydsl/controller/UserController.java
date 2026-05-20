@@ -20,8 +20,10 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import querydsl.dto.validation.OnCreate;
 
+import java.net.URI;
 import java.util.List;
 
 @RestController
@@ -35,10 +37,12 @@ public class UserController {
 
     @PostMapping
     @Operation(summary = "Add a new user")
-    public ResponseEntity<Void> addUser(
+    public ResponseEntity<UserResponseDto> addUser(
             @Validated({OnCreate.class, Default.class}) @RequestBody UserDto userDto) {
-        userService.addUser(userDto);
-        return ResponseEntity.ok().build();
+        UserResponseDto created = userService.addUser(userDto);
+        URI location = ServletUriComponentsBuilder.fromCurrentRequest()
+                .path("/{id}").buildAndExpand(created.getId()).toUri();
+        return ResponseEntity.created(location).body(created);
     }
 
     @GetMapping
