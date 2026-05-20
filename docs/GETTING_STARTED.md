@@ -3,10 +3,39 @@
 ## Prerequisites
 
 - Java 21+
-- PostgreSQL
-- Gradle 8.x
+- PostgreSQL (or Docker, for the quick-start below)
+- Gradle 8.x (the bundled `./gradlew` wrapper is fine)
 
-## Setup
+## Quick start (Docker Compose + IntelliJ)
+
+The fastest local loop: Postgres in Docker, the app in IntelliJ.
+
+```bash
+git clone <repository-url> && cd query-builder-be
+
+# 1. Create your local env file and fill in the two required secrets.
+cp .env.example .env
+#    JWT_SECRET         = output of: openssl rand -base64 48
+#    APP_ENCRYPTION_KEY = output of: openssl rand -base64 32   (must decode to 32 bytes)
+
+# 2. Start Postgres on localhost:5432 (database query_builder_db, creds from .env).
+docker compose up -d
+```
+
+Then run the app:
+
+- **IntelliJ:** open the project (Gradle import, JVM 21), open
+  `QuerydslbuilderApplication`, click ▶ once to create a run config, then
+  **Run → Edit Configurations** and add the env vars from `.env`
+  (`JWT_SECRET`, `APP_ENCRYPTION_KEY`, `DB_USERNAME`, `DB_PASSWORD`).
+  IntelliJ does not read `.env` natively — paste the values, or install the
+  *EnvFile* plugin and point it at `.env`.
+- **CLI:** `set -a && source .env && set +a && ./gradlew bootRun`
+
+Flyway builds the schema and seed data inside `query_builder_db` on first start.
+Stop the database with `docker compose down` (add `-v` to also wipe its data).
+
+## Setup (manual)
 
 ### 1. Clone and build
 
@@ -46,7 +75,7 @@ export APP_ENCRYPTION_KEY="$(openssl rand -base64 32)"
 Or edit `src/main/resources/application.properties`:
 
 ```properties
-spring.datasource.url=jdbc:postgresql://localhost:5432/query_builder
+spring.datasource.url=jdbc:postgresql://localhost:5432/query_builder_db
 spring.datasource.username=${DB_USERNAME:your_username}
 spring.datasource.password=${DB_PASSWORD:your_password}
 ```
