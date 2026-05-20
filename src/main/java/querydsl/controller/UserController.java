@@ -1,6 +1,7 @@
 package querydsl.controller;
 
 import querydsl.dto.ChangeUserStatusRequest;
+import querydsl.dto.PageResponse;
 import querydsl.dto.UserDto;
 import querydsl.dto.UserResponseDto;
 import querydsl.export.ExportService;
@@ -13,7 +14,6 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.groups.Default;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
@@ -47,18 +47,18 @@ public class UserController {
 
     @GetMapping
     @Operation(summary = "Get all users")
-    public ResponseEntity<Page<UserResponseDto>> getAllUsers(
+    public ResponseEntity<PageResponse<UserResponseDto>> getAllUsers(
             @PageableDefault(sort = "createdDate", direction = Sort.Direction.DESC) Pageable pageable,
             @RequestParam(required = false) Long roleId) {
-        return ResponseEntity.ok(userService.getAllUsers(pageable, roleId));
+        return ResponseEntity.ok(PageResponse.from(userService.getAllUsers(pageable, roleId)));
     }
 
     @PostMapping("/query")
     @Operation(summary = "Query users with dynamic conditions")
-    public ResponseEntity<Page<UserResponseDto>> queryUsers(
+    public ResponseEntity<PageResponse<UserResponseDto>> queryUsers(
             @PageableDefault(sort = "createdDate", direction = Sort.Direction.DESC) Pageable pageable,
             @Valid @RequestBody QueryRequest queryRequest) {
-        return ResponseEntity.ok(userService.getAllUsersByQueryRequest(pageable, queryRequest));
+        return ResponseEntity.ok(PageResponse.from(userService.getAllUsersByQueryRequest(pageable, queryRequest)));
     }
 
     @GetMapping("/{id}")

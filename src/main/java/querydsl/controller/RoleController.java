@@ -1,5 +1,6 @@
 package querydsl.controller;
 
+import querydsl.dto.PageResponse;
 import querydsl.dto.RoleDto;
 import querydsl.dto.RoleResponseDto;
 import querydsl.export.ExportService;
@@ -11,7 +12,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
@@ -42,17 +42,17 @@ public class RoleController {
 
     @GetMapping
     @Operation(summary = "Get all roles")
-    public ResponseEntity<Page<RoleResponseDto>> getAllRoles(
+    public ResponseEntity<PageResponse<RoleResponseDto>> getAllRoles(
             @PageableDefault(sort = "createdDate", direction = Sort.Direction.DESC) Pageable pageable) {
-        return ResponseEntity.ok(roleService.getAllRoles(pageable));
+        return ResponseEntity.ok(PageResponse.from(roleService.getAllRoles(pageable)));
     }
 
     @PostMapping("/query")
     @Operation(summary = "Query roles with dynamic conditions")
-    public ResponseEntity<Page<RoleResponseDto>> queryRoles(
+    public ResponseEntity<PageResponse<RoleResponseDto>> queryRoles(
             @PageableDefault(sort = "createdDate", direction = Sort.Direction.DESC) Pageable pageable,
             @Valid @RequestBody QueryRequest queryRequest) {
-        return ResponseEntity.ok(roleService.getAllRolesByQueryRequest(pageable, queryRequest));
+        return ResponseEntity.ok(PageResponse.from(roleService.getAllRolesByQueryRequest(pageable, queryRequest)));
     }
 
     @GetMapping("/{id}")

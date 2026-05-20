@@ -1,5 +1,6 @@
 package querydsl.controller;
 
+import querydsl.dto.PageResponse;
 import querydsl.dto.PermissionDto;
 import querydsl.dto.PermissionResponseDto;
 import querydsl.export.ExportService;
@@ -11,7 +12,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
@@ -42,17 +42,17 @@ public class PermissionController {
 
     @GetMapping
     @Operation(summary = "Get all permissions")
-    public ResponseEntity<Page<PermissionResponseDto>> getAllPermissions(
+    public ResponseEntity<PageResponse<PermissionResponseDto>> getAllPermissions(
             @PageableDefault(sort = "createdDate", direction = Sort.Direction.DESC) Pageable pageable) {
-        return ResponseEntity.ok(permissionService.getAllPermissions(pageable));
+        return ResponseEntity.ok(PageResponse.from(permissionService.getAllPermissions(pageable)));
     }
 
     @PostMapping("/query")
     @Operation(summary = "Query permissions with dynamic conditions")
-    public ResponseEntity<Page<PermissionResponseDto>> queryPermissions(
+    public ResponseEntity<PageResponse<PermissionResponseDto>> queryPermissions(
             @PageableDefault(sort = "createdDate", direction = Sort.Direction.DESC) Pageable pageable,
             @Valid @RequestBody QueryRequest queryRequest) {
-        return ResponseEntity.ok(permissionService.getAllPermissionsByQueryRequest(pageable, queryRequest));
+        return ResponseEntity.ok(PageResponse.from(permissionService.getAllPermissionsByQueryRequest(pageable, queryRequest)));
     }
 
     @GetMapping("/{id}")
