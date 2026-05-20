@@ -82,6 +82,24 @@ Returns a JWT token. No auth required.
 {"field": "createdDate", "direction": "DESC"}
 ```
 
+### PageResponse
+
+Paginated endpoints (`GET /{entity}` and `POST /{entity}/query`) return a stable
+`PageResponse<T>` envelope rather than Spring's `Page`/`PageImpl`:
+
+```json
+{
+  "content": [ { /* …ResponseDto */ } ],
+  "page": 0,
+  "size": 20,
+  "totalElements": 42,
+  "totalPages": 3,
+  "first": true,
+  "last": false,
+  "empty": false
+}
+```
+
 ---
 
 ## Endpoint Pattern
@@ -90,18 +108,18 @@ Every entity (User, Role, Permission) follows the same endpoint pattern:
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/{entity}` | Create |
-| `GET` | `/{entity}` | List all (paginated) |
+| `POST` | `/{entity}` | Create — **201 Created**, `Location` header, body is the created resource |
+| `GET` | `/{entity}` | List all (paginated, `PageResponse<T>`) |
 | `GET` | `/{entity}/{id}` | Get by ID |
 | `PUT` | `/{entity}/{id}` | Update |
 | `DELETE` | `/{entity}/{id}` | Delete |
-| `POST` | `/{entity}/query` | Dynamic query (paginated) |
+| `POST` | `/{entity}/query` | Dynamic query (paginated, `PageResponse<T>`) |
 | `POST` | `/{entity}/count` | Count matching |
 | `POST` | `/{entity}/exists` | Check existence |
 | `POST` | `/{entity}/export/query` | Export to Excel/PDF |
 
 Additionally, User has:
-| `PUT` | `/user/{id}/change-status` | Toggle active/inactive |
+| `PUT` | `/user/{id}/change-status` | Set active/inactive (requires body `{"isActive": <bool>}`) |
 
 ### Authorization
 
@@ -137,7 +155,14 @@ Create a user.
 List users with optional role filter.
 
 ### POST /user/query?page=0&size=20
-Query users. Body: `QueryRequest`. Response: `Page<UserResponseDto>`.
+Query users. Body: `QueryRequest`. Response: `PageResponse<UserResponseDto>`.
+
+### PUT /user/{id}/change-status
+Set a user's active state. Idempotent — sends the absolute target, not a toggle.
+
+```json
+{"isActive": false}
+```
 
 ### POST /user/export/query
 Export matching users. Body:

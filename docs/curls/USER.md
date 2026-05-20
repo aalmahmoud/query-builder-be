@@ -117,13 +117,16 @@ curl -X PUT http://localhost:8080/user/1 \
 
 ---
 
-## Change User Status (Toggle Active/Inactive)
+## Change User Status (Set Active/Inactive)
 
-**Endpoint:** `PUT /user/{id}/change-status`
+**Endpoint:** `PUT /user/{id}/change-status` — requires ADMIN. Send the absolute
+target state (idempotent), not a toggle.
 
 ```bash
 curl -X PUT http://localhost:8080/user/1/change-status \
-  -H "Authorization: Bearer $TOKEN"
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"isActive": false}'
 ```
 
 ---
