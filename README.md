@@ -38,6 +38,8 @@ curl -X POST http://localhost:8080/user/query \
 
 ## Documentation
 
+- **[Demo Walkthrough](docs/DEMO.md)** — guided showcase of the query builder (UI + curl): nested AND/OR, metadata, projections, aggregations, cursor, saved queries
+- **[Query Contract](docs/CONTRACT.md)** — the v2 request/response contract (shared with the Angular UI)
 - **[Getting Started](docs/GETTING_STARTED.md)** — Setup, database, seed data, first login
 - **[User Guide](docs/USER_GUIDE.md)** — Query examples, computed fields, export
 - **[API Reference](docs/API_REFERENCE.md)** — All endpoints, request/response formats
