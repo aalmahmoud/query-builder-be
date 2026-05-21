@@ -6,7 +6,9 @@ import querydsl.dto.RoleResponseDto;
 import querydsl.export.ExportService;
 import querydsl.export.ExportWithQueryRequest;
 import querydsl.model.Role;
+import querydsl.query.EntityMetadata;
 import querydsl.query.QueryRequest;
+import querydsl.service.QueryMetadataService;
 import querydsl.service.RoleService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -30,6 +32,7 @@ public class RoleController {
 
     private final RoleService roleService;
     private final ExportService exportService;
+    private final QueryMetadataService metadataService;
 
     @PostMapping
     @Operation(summary = "Add a new role")
@@ -45,6 +48,12 @@ public class RoleController {
     public ResponseEntity<PageResponse<RoleResponseDto>> getAllRoles(
             @PageableDefault(sort = "createdDate", direction = Sort.Direction.DESC) Pageable pageable) {
         return ResponseEntity.ok(PageResponse.from(roleService.getAllRoles(pageable)));
+    }
+
+    @GetMapping("/metadata")
+    @Operation(summary = "Describe queryable fields, types and valid operations")
+    public ResponseEntity<EntityMetadata> metadata() {
+        return ResponseEntity.ok(metadataService.describe(Role.class));
     }
 
     @PostMapping("/query")

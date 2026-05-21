@@ -71,6 +71,12 @@ public class ComputedFieldHandlerRegistry {
         return entityHandlers != null && entityHandlers.containsKey(fieldName);
     }
 
+    /** Returns the registered computed-field names for an entity (empty if none). */
+    public java.util.Set<String> computedFieldNames(Class<?> entityClass) {
+        Map<String, TypedComputedFieldHandler<?, ?>> entityHandlers = typedHandlers.get(entityClass);
+        return entityHandlers == null ? java.util.Set.of() : new java.util.HashSet<>(entityHandlers.keySet());
+    }
+
     public Predicate buildPredicate(Object qEntity, QueryCondition condition, Class<?> entityClass) {
         Map<String, TypedComputedFieldHandler<?, ?>> entityHandlers = typedHandlers.get(entityClass);
         if (entityHandlers == null) {

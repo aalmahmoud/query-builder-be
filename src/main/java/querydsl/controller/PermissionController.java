@@ -6,8 +6,10 @@ import querydsl.dto.PermissionResponseDto;
 import querydsl.export.ExportService;
 import querydsl.export.ExportWithQueryRequest;
 import querydsl.model.Permission;
+import querydsl.query.EntityMetadata;
 import querydsl.query.QueryRequest;
 import querydsl.service.PermissionService;
+import querydsl.service.QueryMetadataService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -30,6 +32,7 @@ public class PermissionController {
 
     private final PermissionService permissionService;
     private final ExportService exportService;
+    private final QueryMetadataService metadataService;
 
     @PostMapping
     @Operation(summary = "Add a new permission")
@@ -45,6 +48,12 @@ public class PermissionController {
     public ResponseEntity<PageResponse<PermissionResponseDto>> getAllPermissions(
             @PageableDefault(sort = "createdDate", direction = Sort.Direction.DESC) Pageable pageable) {
         return ResponseEntity.ok(PageResponse.from(permissionService.getAllPermissions(pageable)));
+    }
+
+    @GetMapping("/metadata")
+    @Operation(summary = "Describe queryable fields, types and valid operations")
+    public ResponseEntity<EntityMetadata> metadata() {
+        return ResponseEntity.ok(metadataService.describe(Permission.class));
     }
 
     @PostMapping("/query")
