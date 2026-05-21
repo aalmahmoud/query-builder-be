@@ -3,9 +3,15 @@ package querydsl.controller;
 import querydsl.dto.PageResponse;
 import querydsl.dto.PermissionDto;
 import querydsl.dto.PermissionResponseDto;
+import querydsl.dto.SavedQueryDto;
 import querydsl.export.ExportService;
+import querydsl.service.SavedQueryService;
 import querydsl.export.ExportWithQueryRequest;
 import querydsl.model.Permission;
+import querydsl.query.AggregationRequest;
+import querydsl.query.AggregationResult;
+import querydsl.query.CursorPage;
+import querydsl.query.CursorRequest;
 import querydsl.query.EntityMetadata;
 import querydsl.query.QueryRequest;
 import querydsl.service.PermissionService;
@@ -33,6 +39,7 @@ public class PermissionController {
     private final PermissionService permissionService;
     private final ExportService exportService;
     private final QueryMetadataService metadataService;
+    private final SavedQueryService savedQueryService;
 
     @PostMapping
     @Operation(summary = "Add a new permission")
@@ -56,12 +63,48 @@ public class PermissionController {
         return ResponseEntity.ok(metadataService.describe(Permission.class));
     }
 
+    @GetMapping("/saved-queries")
+    @Operation(summary = "List my saved permission queries")
+    public ResponseEntity<java.util.List<SavedQueryDto.Response>> listSavedQueries() {
+        return ResponseEntity.ok(savedQueryService.list("permission"));
+    }
+
+    @PostMapping("/saved-queries")
+    @Operation(summary = "Save a named permission query")
+    public ResponseEntity<SavedQueryDto.Response> createSavedQuery(@Valid @RequestBody SavedQueryDto.Request req) {
+        return ResponseEntity.status(201).body(savedQueryService.create("permission", req));
+    }
+
+    @DeleteMapping("/saved-queries/{savedQueryId}")
+    @Operation(summary = "Delete one of my saved permission queries")
+    public ResponseEntity<Void> deleteSavedQuery(@PathVariable Long savedQueryId) {
+        savedQueryService.delete("permission", savedQueryId);
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/query")
-    @Operation(summary = "Query permissions with dynamic conditions")
-    public ResponseEntity<PageResponse<PermissionResponseDto>> queryPermissions(
+    @Operation(summary = "Query permissions (recursive AND/OR groups; optional projection via select)")
+    public ResponseEntity<PageResponse<?>> queryPermissions(
             @PageableDefault(sort = "createdDate", direction = Sort.Direction.DESC) Pageable pageable,
             @Valid @RequestBody QueryRequest queryRequest) {
+        if (queryRequest.getSelect() != null && !queryRequest.getSelect().isEmpty()) {
+            return ResponseEntity.ok(PageResponse.from(permissionService.getAllPermissionsProjected(pageable, queryRequest)));
+        }
         return ResponseEntity.ok(PageResponse.from(permissionService.getAllPermissionsByQueryRequest(pageable, queryRequest)));
+    }
+
+    @PostMapping("/query/cursor")
+    @Operation(summary = "Keyset (cursor) pagination over permissions")
+    public ResponseEntity<CursorPage<PermissionResponseDto>> queryPermissionsByCursor(
+            @Valid @RequestBody CursorRequest request) {
+        return ResponseEntity.ok(
+                permissionService.queryPermissionsByCursor(request.query(), request.cursor(), request.size()));
+    }
+
+    @PostMapping("/aggregate")
+    @Operation(summary = "Group-by + metric aggregation over permissions")
+    public ResponseEntity<AggregationResult> aggregatePermissions(@Valid @RequestBody AggregationRequest request) {
+        return ResponseEntity.ok(permissionService.aggregatePermissions(request));
     }
 
     @GetMapping("/{id}")

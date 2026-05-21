@@ -79,6 +79,26 @@ class QueryPredicateBuilderTest {
     }
 
     @Test
+    void greaterThan_onNumericField_buildsPredicate() {
+        // Regression: numeric fields are NumberExpression (sibling of ComparableExpression);
+        // range ops used to throw "requires ComparableExpression; got NumberPath".
+        Predicate p = build("id", QueryOperation.GREATER_THAN, "5");
+        assertNotNull(p);
+        assertEquals("user.id > 5", p.toString());
+    }
+
+    @Test
+    void between_onNumericField_buildsPredicate() {
+        QueryCondition c = new QueryCondition();
+        c.setField("id");
+        c.setOperation(QueryOperation.BETWEEN);
+        c.setStartValue("1");
+        c.setEndValue("10");
+        Predicate p = builder.buildPredicate(new QueryRequest(c), User.class);
+        assertNotNull(p);
+    }
+
+    @Test
     void isTrue_onStringField_throwsQueryException() {
         assertThrows(QueryException.class,
                 () -> build("firstName", QueryOperation.IS_TRUE, null));

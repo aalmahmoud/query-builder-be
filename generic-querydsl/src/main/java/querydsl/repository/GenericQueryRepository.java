@@ -31,7 +31,8 @@ public interface GenericQueryRepository<T, ID> extends JpaRepository<T, ID>, Que
     default Page<T> findAllByQueryRequest(QueryRequest queryRequest, Pageable pageable) {
         Predicate predicate = QueryPredicateBuilder.getInstance()
                 .buildPredicate(queryRequest, getEntityClass());
-        return findAll(predicate, pageable);
+        // A null predicate means "no filter" (empty/whole-set query) — fetch all, sorted.
+        return predicate == null ? findAll(pageable) : findAll(predicate, pageable);
     }
 
     /**
@@ -43,6 +44,9 @@ public interface GenericQueryRepository<T, ID> extends JpaRepository<T, ID>, Que
     default List<T> findAllByQueryRequest(QueryRequest queryRequest) {
         Predicate predicate = QueryPredicateBuilder.getInstance()
                 .buildPredicate(queryRequest, getEntityClass());
+        if (predicate == null) {
+            return findAll();
+        }
         return StreamSupport.stream(findAll(predicate).spliterator(), false).toList();
     }
 
@@ -55,7 +59,7 @@ public interface GenericQueryRepository<T, ID> extends JpaRepository<T, ID>, Que
     default long countByQueryRequest(QueryRequest queryRequest) {
         Predicate predicate = QueryPredicateBuilder.getInstance()
                 .buildPredicate(queryRequest, getEntityClass());
-        return count(predicate);
+        return predicate == null ? count() : count(predicate);
     }
 
     /**
@@ -67,7 +71,7 @@ public interface GenericQueryRepository<T, ID> extends JpaRepository<T, ID>, Que
     default boolean existsByQueryRequest(QueryRequest queryRequest) {
         Predicate predicate = QueryPredicateBuilder.getInstance()
                 .buildPredicate(queryRequest, getEntityClass());
-        return exists(predicate);
+        return predicate == null ? count() > 0 : exists(predicate);
     }
 
     /**

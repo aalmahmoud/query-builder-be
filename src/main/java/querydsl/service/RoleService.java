@@ -6,6 +6,9 @@ import querydsl.exception.EntityNotFoundException;
 import querydsl.mapper.RoleMapper;
 import querydsl.model.Permission;
 import querydsl.model.Role;
+import querydsl.query.AggregationRequest;
+import querydsl.query.AggregationResult;
+import querydsl.query.CursorPage;
 import querydsl.query.QueryRequest;
 import querydsl.repository.PermissionRepository;
 import querydsl.repository.RoleRepository;
@@ -93,6 +96,22 @@ public class RoleService {
     public Page<RoleResponseDto> getAllRolesByQueryRequest(Pageable pageable, QueryRequest queryRequest) {
         return genericQueryService.findAllByQueryRequest(roleRepository, queryRequest, pageable)
                 .map(roleMapper::toRoleResponseDto);
+    }
+
+    public org.springframework.data.domain.Page<java.util.Map<String, Object>> getAllRolesProjected(
+            Pageable pageable, QueryRequest queryRequest) {
+        return genericQueryService.queryProjection(roleRepository, queryRequest, pageable);
+    }
+
+    public AggregationResult aggregateRoles(AggregationRequest request) {
+        return genericQueryService.aggregate(roleRepository, request);
+    }
+
+    public CursorPage<RoleResponseDto> queryRolesByCursor(QueryRequest query, String cursor, Integer size) {
+        CursorPage<Role> page = genericQueryService.queryByCursor(roleRepository, query, cursor, size);
+        return new CursorPage<>(
+                page.content().stream().map(roleMapper::toRoleResponseDto).toList(),
+                page.nextCursor(), page.hasNext());
     }
 
     public List<Role> getAllRolesByQueryRequestForExport(QueryRequest queryRequest) {

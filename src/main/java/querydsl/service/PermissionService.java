@@ -5,6 +5,9 @@ import querydsl.dto.PermissionResponseDto;
 import querydsl.exception.EntityNotFoundException;
 import querydsl.mapper.PermissionMapper;
 import querydsl.model.Permission;
+import querydsl.query.AggregationRequest;
+import querydsl.query.AggregationResult;
+import querydsl.query.CursorPage;
 import querydsl.query.QueryRequest;
 import querydsl.repository.PermissionRepository;
 import lombok.RequiredArgsConstructor;
@@ -71,6 +74,22 @@ public class PermissionService {
     public Page<PermissionResponseDto> getAllPermissionsByQueryRequest(Pageable pageable, QueryRequest queryRequest) {
         return genericQueryService.findAllByQueryRequest(permissionRepository, queryRequest, pageable)
                 .map(permissionMapper::toPermissionResponseDto);
+    }
+
+    public org.springframework.data.domain.Page<java.util.Map<String, Object>> getAllPermissionsProjected(
+            Pageable pageable, QueryRequest queryRequest) {
+        return genericQueryService.queryProjection(permissionRepository, queryRequest, pageable);
+    }
+
+    public AggregationResult aggregatePermissions(AggregationRequest request) {
+        return genericQueryService.aggregate(permissionRepository, request);
+    }
+
+    public CursorPage<PermissionResponseDto> queryPermissionsByCursor(QueryRequest query, String cursor, Integer size) {
+        CursorPage<Permission> page = genericQueryService.queryByCursor(permissionRepository, query, cursor, size);
+        return new CursorPage<>(
+                page.content().stream().map(permissionMapper::toPermissionResponseDto).toList(),
+                page.nextCursor(), page.hasNext());
     }
 
     public List<Permission> getAllPermissionsByQueryRequestForExport(QueryRequest queryRequest) {

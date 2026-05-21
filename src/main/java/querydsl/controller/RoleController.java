@@ -3,9 +3,15 @@ package querydsl.controller;
 import querydsl.dto.PageResponse;
 import querydsl.dto.RoleDto;
 import querydsl.dto.RoleResponseDto;
+import querydsl.dto.SavedQueryDto;
 import querydsl.export.ExportService;
+import querydsl.service.SavedQueryService;
 import querydsl.export.ExportWithQueryRequest;
 import querydsl.model.Role;
+import querydsl.query.AggregationRequest;
+import querydsl.query.AggregationResult;
+import querydsl.query.CursorPage;
+import querydsl.query.CursorRequest;
 import querydsl.query.EntityMetadata;
 import querydsl.query.QueryRequest;
 import querydsl.service.QueryMetadataService;
@@ -33,6 +39,7 @@ public class RoleController {
     private final RoleService roleService;
     private final ExportService exportService;
     private final QueryMetadataService metadataService;
+    private final SavedQueryService savedQueryService;
 
     @PostMapping
     @Operation(summary = "Add a new role")
@@ -56,12 +63,48 @@ public class RoleController {
         return ResponseEntity.ok(metadataService.describe(Role.class));
     }
 
+    @GetMapping("/saved-queries")
+    @Operation(summary = "List my saved role queries")
+    public ResponseEntity<java.util.List<SavedQueryDto.Response>> listSavedQueries() {
+        return ResponseEntity.ok(savedQueryService.list("role"));
+    }
+
+    @PostMapping("/saved-queries")
+    @Operation(summary = "Save a named role query")
+    public ResponseEntity<SavedQueryDto.Response> createSavedQuery(@Valid @RequestBody SavedQueryDto.Request req) {
+        return ResponseEntity.status(201).body(savedQueryService.create("role", req));
+    }
+
+    @DeleteMapping("/saved-queries/{savedQueryId}")
+    @Operation(summary = "Delete one of my saved role queries")
+    public ResponseEntity<Void> deleteSavedQuery(@PathVariable Long savedQueryId) {
+        savedQueryService.delete("role", savedQueryId);
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/query")
-    @Operation(summary = "Query roles with dynamic conditions")
-    public ResponseEntity<PageResponse<RoleResponseDto>> queryRoles(
+    @Operation(summary = "Query roles (recursive AND/OR groups; optional projection via select)")
+    public ResponseEntity<PageResponse<?>> queryRoles(
             @PageableDefault(sort = "createdDate", direction = Sort.Direction.DESC) Pageable pageable,
             @Valid @RequestBody QueryRequest queryRequest) {
+        if (queryRequest.getSelect() != null && !queryRequest.getSelect().isEmpty()) {
+            return ResponseEntity.ok(PageResponse.from(roleService.getAllRolesProjected(pageable, queryRequest)));
+        }
         return ResponseEntity.ok(PageResponse.from(roleService.getAllRolesByQueryRequest(pageable, queryRequest)));
+    }
+
+    @PostMapping("/query/cursor")
+    @Operation(summary = "Keyset (cursor) pagination over roles")
+    public ResponseEntity<CursorPage<RoleResponseDto>> queryRolesByCursor(
+            @Valid @RequestBody CursorRequest request) {
+        return ResponseEntity.ok(
+                roleService.queryRolesByCursor(request.query(), request.cursor(), request.size()));
+    }
+
+    @PostMapping("/aggregate")
+    @Operation(summary = "Group-by + metric aggregation over roles")
+    public ResponseEntity<AggregationResult> aggregateRoles(@Valid @RequestBody AggregationRequest request) {
+        return ResponseEntity.ok(roleService.aggregateRoles(request));
     }
 
     @GetMapping("/{id}")

@@ -2,11 +2,17 @@ package querydsl.controller;
 
 import querydsl.dto.ChangeUserStatusRequest;
 import querydsl.dto.PageResponse;
+import querydsl.dto.SavedQueryDto;
 import querydsl.dto.UserDto;
 import querydsl.dto.UserResponseDto;
 import querydsl.export.ExportService;
+import querydsl.service.SavedQueryService;
 import querydsl.export.ExportWithQueryRequest;
 import querydsl.model.User;
+import querydsl.query.AggregationRequest;
+import querydsl.query.AggregationResult;
+import querydsl.query.CursorPage;
+import querydsl.query.CursorRequest;
 import querydsl.query.EntityMetadata;
 import querydsl.query.QueryRequest;
 import querydsl.service.QueryMetadataService;
@@ -37,6 +43,7 @@ public class UserController {
     private final UserService userService;
     private final ExportService exportService;
     private final QueryMetadataService metadataService;
+    private final SavedQueryService savedQueryService;
 
     @PostMapping
     @Operation(summary = "Add a new user")
@@ -62,12 +69,48 @@ public class UserController {
         return ResponseEntity.ok(metadataService.describe(User.class));
     }
 
+    @GetMapping("/saved-queries")
+    @Operation(summary = "List my saved user queries")
+    public ResponseEntity<java.util.List<SavedQueryDto.Response>> listSavedQueries() {
+        return ResponseEntity.ok(savedQueryService.list("user"));
+    }
+
+    @PostMapping("/saved-queries")
+    @Operation(summary = "Save a named user query")
+    public ResponseEntity<SavedQueryDto.Response> createSavedQuery(@Valid @RequestBody SavedQueryDto.Request req) {
+        return ResponseEntity.status(201).body(savedQueryService.create("user", req));
+    }
+
+    @DeleteMapping("/saved-queries/{savedQueryId}")
+    @Operation(summary = "Delete one of my saved user queries")
+    public ResponseEntity<Void> deleteSavedQuery(@PathVariable Long savedQueryId) {
+        savedQueryService.delete("user", savedQueryId);
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/query")
-    @Operation(summary = "Query users with dynamic conditions")
-    public ResponseEntity<PageResponse<UserResponseDto>> queryUsers(
+    @Operation(summary = "Query users (recursive AND/OR groups; optional projection via select)")
+    public ResponseEntity<PageResponse<?>> queryUsers(
             @PageableDefault(sort = "createdDate", direction = Sort.Direction.DESC) Pageable pageable,
             @Valid @RequestBody QueryRequest queryRequest) {
+        if (queryRequest.getSelect() != null && !queryRequest.getSelect().isEmpty()) {
+            return ResponseEntity.ok(PageResponse.from(userService.getAllUsersProjected(pageable, queryRequest)));
+        }
         return ResponseEntity.ok(PageResponse.from(userService.getAllUsersByQueryRequest(pageable, queryRequest)));
+    }
+
+    @PostMapping("/query/cursor")
+    @Operation(summary = "Keyset (cursor) pagination over users")
+    public ResponseEntity<CursorPage<UserResponseDto>> queryUsersByCursor(
+            @Valid @RequestBody CursorRequest request) {
+        return ResponseEntity.ok(
+                userService.queryUsersByCursor(request.query(), request.cursor(), request.size()));
+    }
+
+    @PostMapping("/aggregate")
+    @Operation(summary = "Group-by + metric aggregation over users")
+    public ResponseEntity<AggregationResult> aggregateUsers(@Valid @RequestBody AggregationRequest request) {
+        return ResponseEntity.ok(userService.aggregateUsers(request));
     }
 
     @GetMapping("/{id}")

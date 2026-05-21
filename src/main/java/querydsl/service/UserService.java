@@ -6,6 +6,9 @@ import querydsl.exception.EntityNotFoundException;
 import querydsl.mapper.UserMapper;
 import querydsl.model.Role;
 import querydsl.model.User;
+import querydsl.query.AggregationRequest;
+import querydsl.query.AggregationResult;
+import querydsl.query.CursorPage;
 import querydsl.query.QueryCondition;
 import querydsl.query.QueryOperation;
 import querydsl.query.QueryRequest;
@@ -23,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -147,6 +151,24 @@ public class UserService {
     public Page<UserResponseDto> getAllUsersByQueryRequest(Pageable pageable, QueryRequest queryRequest) {
         return genericQueryService.findAllByQueryRequest(userRepository, queryRequest, pageable)
                 .map(userMapper::toUserResponseDto);
+    }
+
+    /** Projected query (sparse fieldset) — returns flat maps keyed by the requested paths. */
+    public Page<Map<String, Object>> getAllUsersProjected(Pageable pageable, QueryRequest queryRequest) {
+        return genericQueryService.queryProjection(userRepository, queryRequest, pageable);
+    }
+
+    /** Group-by + metric aggregation over users. */
+    public AggregationResult aggregateUsers(AggregationRequest request) {
+        return genericQueryService.aggregate(userRepository, request);
+    }
+
+    /** Keyset (cursor) pagination over users (stable createdDate/id ordering). */
+    public CursorPage<UserResponseDto> queryUsersByCursor(QueryRequest query, String cursor, Integer size) {
+        CursorPage<User> page = genericQueryService.queryByCursor(userRepository, query, cursor, size);
+        return new CursorPage<>(
+                page.content().stream().map(userMapper::toUserResponseDto).toList(),
+                page.nextCursor(), page.hasNext());
     }
 
     public List<User> getAllUsersByQueryRequestForExport(QueryRequest queryRequest) {

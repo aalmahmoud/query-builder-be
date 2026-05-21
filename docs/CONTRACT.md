@@ -161,7 +161,7 @@ For large datasets, `POST /{entity}/query/cursor`:
 ```jsonc
 { "query": { /* QueryRequest */ }, "cursor": null, "size": 20 }
 ```
-- Sort is fixed to `createdDate DESC, id DESC` for v2 (stable keyset). `query.sortFields` is ignored on this endpoint.
+- Sort is fixed to `id DESC` (the unique, monotonic PK — a stable keyset with no timestamp-precision pitfalls). `query.sortFields` is ignored on this endpoint.
 - Response: `CursorPage<T>`:
 ```jsonc
 { "content": [ /* T[] */ ], "nextCursor": "eyJjZCI6...", "hasNext": true }

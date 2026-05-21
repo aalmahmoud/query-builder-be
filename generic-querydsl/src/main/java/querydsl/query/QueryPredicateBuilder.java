@@ -199,6 +199,34 @@ public class QueryPredicateBuilder {
      * @param queryRequest The query request to validate
      * @throws IllegalArgumentException if validation fails
      */
+    /**
+     * Resolves a dotted field path to its QueryDSL expression on the entity's Q-root,
+     * for use in projections / aggregations / group-by. Computed fields are not supported.
+     */
+    public com.querydsl.core.types.Expression<?> resolveFieldExpression(Class<?> entityClass, String fieldPath) {
+        Object qEntity = getOrLoadQEntity(entityClass);
+        Object path = navigateToField(qEntity, fieldPath);
+        if (!(path instanceof com.querydsl.core.types.Expression<?> expr)) {
+            throw new QueryException("Field '" + fieldPath + "' cannot be selected on " + entityClass.getSimpleName());
+        }
+        return expr;
+    }
+
+    /** The QueryDSL entity root for {@code FROM} clauses (projections / aggregations). */
+    public com.querydsl.core.types.EntityPath<?> getEntityPath(Class<?> entityClass) {
+        Object q = getOrLoadQEntity(entityClass);
+        if (!(q instanceof com.querydsl.core.types.EntityPath<?> ep)) {
+            throw new QueryException("No QueryDSL root for " + entityClass.getSimpleName());
+        }
+        return ep;
+    }
+
+    /** Validates a single field path against the entity's filterable allow-list (public entry). */
+    public void assertFieldFilterable(Class<?> entityClass, String field) {
+        validateFieldName(field, "field");
+        assertFilterable(field, entityClass, "filterable");
+    }
+
     private void validateQueryRequest(QueryRequest queryRequest, Class<?> entityClass) {
         if (queryRequest == null) {
             throw new IllegalArgumentException("QueryRequest cannot be null");
@@ -1075,8 +1103,14 @@ public class QueryPredicateBuilder {
      * @param endValue The end value (inclusive)
      * @return Predicate for BETWEEN operation, or null if fieldPath is not a ComparableExpression
      */
+    // NOTE: numeric fields are QueryDSL NumberExpression, which is a SIBLING of
+    // ComparableExpression (not a subtype). Each range helper therefore handles
+    // NumberExpression explicitly first, then ComparableExpression (String/date/enum).
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static Predicate buildBetweenPredicate(Object fieldPath, Object startValue, Object endValue) {
+        if (fieldPath instanceof NumberExpression num) {
+            return num.between((Number) startValue, (Number) endValue);
+        }
         if (fieldPath instanceof ComparableExpression) {
             ComparableExpression<Comparable> expr = (ComparableExpression<Comparable>) fieldPath;
             return expr.between((Comparable) startValue, (Comparable) endValue);
@@ -1086,6 +1120,9 @@ public class QueryPredicateBuilder {
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static Predicate buildNotBetweenPredicate(Object fieldPath, Object startValue, Object endValue) {
+        if (fieldPath instanceof NumberExpression num) {
+            return num.between((Number) startValue, (Number) endValue).not();
+        }
         if (fieldPath instanceof ComparableExpression) {
             ComparableExpression<Comparable> expr = (ComparableExpression<Comparable>) fieldPath;
             return expr.between((Comparable) startValue, (Comparable) endValue).not();
@@ -1095,6 +1132,9 @@ public class QueryPredicateBuilder {
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static Predicate buildGreaterThanPredicate(Object fieldPath, Object value) {
+        if (fieldPath instanceof NumberExpression num) {
+            return num.gt((Number) value);
+        }
         if (fieldPath instanceof ComparableExpression) {
             ComparableExpression<Comparable> expr = (ComparableExpression<Comparable>) fieldPath;
             return expr.gt((Comparable) value);
@@ -1104,6 +1144,9 @@ public class QueryPredicateBuilder {
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static Predicate buildGreaterThanOrEqualPredicate(Object fieldPath, Object value) {
+        if (fieldPath instanceof NumberExpression num) {
+            return num.goe((Number) value);
+        }
         if (fieldPath instanceof ComparableExpression) {
             ComparableExpression<Comparable> expr = (ComparableExpression<Comparable>) fieldPath;
             return expr.goe((Comparable) value);
@@ -1113,6 +1156,9 @@ public class QueryPredicateBuilder {
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static Predicate buildLessThanPredicate(Object fieldPath, Object value) {
+        if (fieldPath instanceof NumberExpression num) {
+            return num.lt((Number) value);
+        }
         if (fieldPath instanceof ComparableExpression) {
             ComparableExpression<Comparable> expr = (ComparableExpression<Comparable>) fieldPath;
             return expr.lt((Comparable) value);
@@ -1122,6 +1168,9 @@ public class QueryPredicateBuilder {
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static Predicate buildLessThanOrEqualPredicate(Object fieldPath, Object value) {
+        if (fieldPath instanceof NumberExpression num) {
+            return num.loe((Number) value);
+        }
         if (fieldPath instanceof ComparableExpression) {
             ComparableExpression<Comparable> expr = (ComparableExpression<Comparable>) fieldPath;
             return expr.loe((Comparable) value);
