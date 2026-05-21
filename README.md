@@ -68,6 +68,38 @@ The project includes a working User/Role/Permission management system:
 - **Role** — CRUD, query, export; relates to Permission (ManyToMany)
 - **Permission** — CRUD, query, export; resource:action naming (e.g. `user:create`)
 
+## Using the engine as a library
+
+The query engine lives in the `:generic-querydsl` subproject and is packaged as a
+standalone, reusable artifact — the User/Role/Permission app above is just its
+reference consumer. To depend on it from another project, see
+**[generic-querydsl/README.md](generic-querydsl/README.md)** (install, queryable-entity
+quick start, `QueryRequest` contract).
+
+### Publishing
+
+The library publishes to an internal Maven repo via `maven-publish`:
+
+```bash
+./gradlew :generic-querydsl:publishToMavenLocal   # install to ~/.m2 (no creds needed)
+./gradlew :generic-querydsl:publish               # push to the internal repo
+```
+
+Two things must be set before a real `publish` (see `generic-querydsl/build.gradle`):
+
+1. **`group`** — currently the placeholder `com.example.querydsl`. Replace with your
+   real reverse-domain namespace.
+2. **Internal repo URL + credentials** — supplied at build time, never committed.
+   Put them in `~/.gradle/gradle.properties`:
+   ```properties
+   internalReleasesUrl=https://nexus.example.com/repository/maven-releases/
+   internalSnapshotsUrl=https://nexus.example.com/repository/maven-snapshots/
+   internalRepoUser=ci-publisher
+   internalRepoPassword=••••••
+   ```
+   …or as env vars `INTERNAL_REPO_USER` / `INTERNAL_REPO_PASSWORD`. The snapshot vs
+   release URL is chosen automatically by whether `version` ends in `-SNAPSHOT`.
+
 ## Requirements
 
 - Java 21+
