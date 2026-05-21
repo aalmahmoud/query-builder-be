@@ -83,7 +83,13 @@ public class QueryPredicateBuilder {
     
     // Cache for field lookups (thread-safe, reduces repeated reflection calls)
     private static final Map<String, Field> FIELD_CACHE = new ConcurrentHashMap<>(128);
-    
+
+    // Cache of @FilterableFields allow-lists per entity. Value is null-sentinel (empty set
+    // wrapped) when the entity has no annotation, so we don't re-reflect on every request.
+    private static final Map<Class<?>, java.util.Set<String>> FILTERABLE_CACHE = new ConcurrentHashMap<>(16);
+    // Marker set meaning "entity declares no @FilterableFields → permissive (no allow-list)".
+    private static final java.util.Set<String> NO_FILTER_RESTRICTION = java.util.Collections.emptySet();
+
     // Maximum number of conditions allowed per query (prevents resource exhaustion)
     // Maximum number of conditions allowed per query (prevents resource exhaustion).
     // Phase 5 fix 5.5: made public so QueryRequest's @Size annotation can reference
@@ -93,6 +99,10 @@ public class QueryPredicateBuilder {
     // Maximum number of dotted path segments. "role.name" = 2 segments,
     // "role.permissions.name" = 3, etc. Limits join depth and rules out abuse.
     private static final int MAX_FIELD_PATH_SEGMENTS = 5;
+
+    // Maximum nesting depth of QueryGroups (the top-level request is depth 1). Bounds
+    // recursion and pathological boolean trees.
+    public static final int MAX_GROUP_DEPTH = 5;
 
     // Maximum number of values allowed in IN operations (prevents memory exhaustion and
     // pathological query plans). Phase 4 fix 4.4: lowered from 1000 to 200 — JDBC drivers
@@ -121,27 +131,57 @@ public class QueryPredicateBuilder {
      * @throws IllegalArgumentException if query request validation fails
      */
     public <T> Predicate buildPredicate(QueryRequest queryRequest, Class<T> entityClass) {
-        if (queryRequest == null || queryRequest.getConditions() == null || queryRequest.getConditions().isEmpty()) {
+        if (queryRequest == null) {
             return null;
         }
-        
-        // Validate query request (defensive check - conditions list could be modified)
-        List<QueryCondition> conditions = queryRequest.getConditions();
 
-        validateQueryRequest(queryRequest);
-        
-        // Use BooleanBuilder to combine predicates with AND operation
-        // BooleanBuilder automatically handles null predicates and provides cleaner code
+        // Validate the whole condition/group tree (depth, counts, field allow-list, …).
+        validateQueryRequest(queryRequest, entityClass);
+
+        // The request is itself the top-level boolean group: its conditions + nested groups
+        // combined by its logic (default AND). A v1 body (conditions only, no logic/groups)
+        // therefore behaves exactly as before.
+        return buildGroupPredicate(
+                queryRequest.getLogic(),
+                queryRequest.getConditions(),
+                queryRequest.getGroups(),
+                entityClass);
+    }
+
+    /**
+     * Recursively builds the predicate for a boolean group: its leaf conditions and nested
+     * sub-groups, combined with {@code logic} (AND when null). Returns {@code null} for an
+     * empty group (matches everything), consistent with v1 behaviour.
+     */
+    private <T> Predicate buildGroupPredicate(LogicOperator logic,
+                                              List<QueryCondition> conditions,
+                                              List<QueryGroup> groups,
+                                              Class<T> entityClass) {
+        boolean or = (logic == LogicOperator.OR);
         BooleanBuilder booleanBuilder = new BooleanBuilder();
-        
-        for (QueryCondition condition : conditions) {
-            Predicate predicate = this.buildConditionPredicate(condition, entityClass);
-            if (predicate != null) {
-                booleanBuilder.and(predicate);
+
+        if (conditions != null) {
+            for (QueryCondition condition : conditions) {
+                Predicate predicate = this.buildConditionPredicate(condition, entityClass);
+                if (predicate != null) {
+                    booleanBuilder = or ? booleanBuilder.or(predicate) : booleanBuilder.and(predicate);
+                }
             }
         }
-        
-        // BooleanBuilder returns null if no conditions were added, which is the desired behavior
+
+        if (groups != null) {
+            for (QueryGroup group : groups) {
+                if (group == null) {
+                    continue;
+                }
+                Predicate sub = buildGroupPredicate(
+                        group.getLogic(), group.getConditions(), group.getGroups(), entityClass);
+                if (sub != null) {
+                    booleanBuilder = or ? booleanBuilder.or(sub) : booleanBuilder.and(sub);
+                }
+            }
+        }
+
         return booleanBuilder.getValue();
     }
     
@@ -159,91 +199,142 @@ public class QueryPredicateBuilder {
      * @param queryRequest The query request to validate
      * @throws IllegalArgumentException if validation fails
      */
-    private static void validateQueryRequest(QueryRequest queryRequest) {
+    private void validateQueryRequest(QueryRequest queryRequest, Class<?> entityClass) {
         if (queryRequest == null) {
             throw new IllegalArgumentException("QueryRequest cannot be null");
         }
-        
-        List<QueryCondition> conditions = queryRequest.getConditions();
-        if (conditions == null || conditions.isEmpty()) {
-            // Already handled in buildPredicate, but validate here for consistency
+
+        // Walk the whole condition/group tree: bound total conditions and nesting depth,
+        // validate each field, and enforce the @FilterableFields allow-list.
+        int[] conditionCount = {0};
+        validateGroup(queryRequest.getConditions(), queryRequest.getGroups(),
+                entityClass, 1, conditionCount);
+
+        // Projected (select) fields are subject to the same allow-list as filtering.
+        if (queryRequest.getSelect() != null) {
+            for (String field : queryRequest.getSelect()) {
+                validateFieldName(field, "selected field");
+                assertFilterable(field, entityClass, "selectable");
+            }
+        }
+
+        validateSortFields(queryRequest.getSortFields());
+    }
+
+    /** Recursively validates a group's conditions and nested groups. */
+    private void validateGroup(List<QueryCondition> conditions, List<QueryGroup> groups,
+                               Class<?> entityClass, int depth, int[] conditionCount) {
+        if (depth > MAX_GROUP_DEPTH) {
+            throw new IllegalArgumentException(
+                    String.format("Query groups nested too deep. Maximum depth: %d", MAX_GROUP_DEPTH));
+        }
+        if (conditions != null) {
+            for (QueryCondition condition : conditions) {
+                if (condition == null || condition.getField() == null) {
+                    continue;
+                }
+                if (++conditionCount[0] > MAX_CONDITIONS) {
+                    throw new IllegalArgumentException(
+                            String.format("Too many conditions. Maximum allowed: %d", MAX_CONDITIONS));
+                }
+                validateCondition(condition, entityClass);
+            }
+        }
+        if (groups != null) {
+            for (QueryGroup group : groups) {
+                if (group == null) {
+                    continue;
+                }
+                validateGroup(group.getConditions(), group.getGroups(),
+                        entityClass, depth + 1, conditionCount);
+            }
+        }
+    }
+
+    /** Validates a single leaf condition: field name/depth, IN size, BETWEEN, allow-list. */
+    private void validateCondition(QueryCondition condition, Class<?> entityClass) {
+        String field = condition.getField();
+        validateFieldName(field, "field");
+
+        // Enforce the per-entity filterable allow-list (computed fields always allowed).
+        assertFilterable(field, entityClass, "filterable");
+
+        if (condition.getOperation() == QueryOperation.IN ||
+                condition.getOperation() == QueryOperation.NOT_IN) {
+            if (condition.getValues() != null && condition.getValues().size() > MAX_IN_VALUES) {
+                throw new IllegalArgumentException(
+                        String.format("Too many values in IN operation. Maximum allowed: %d, provided: %d",
+                                MAX_IN_VALUES, condition.getValues().size()));
+            }
+        }
+
+        if (condition.getOperation() == QueryOperation.BETWEEN ||
+                condition.getOperation() == QueryOperation.NOT_BETWEEN) {
+            if (condition.getStartValue() == null || condition.getEndValue() == null) {
+                throw new IllegalArgumentException(
+                        "BETWEEN operation requires both startValue and endValue to be provided");
+            }
+        }
+    }
+
+    /** Validates field-name characters and path depth (shared by conditions and select). */
+    private static void validateFieldName(String field, String label) {
+        if (field == null || !FIELD_NAME_PATTERN.matcher(field).matches()) {
+            throw new IllegalArgumentException(
+                    String.format("Invalid %s name: '%s'. Names can only contain alphanumeric characters, underscores, and dots",
+                            label, field));
+        }
+        int depth = field.split("\\.").length;
+        if (depth > MAX_FIELD_PATH_SEGMENTS) {
+            throw new IllegalArgumentException(
+                    String.format("%s path too deep: '%s'. Maximum depth: %d", label, field, MAX_FIELD_PATH_SEGMENTS));
+        }
+    }
+
+    private static void validateSortFields(List<SortField> sortFields) {
+        if (sortFields == null || sortFields.isEmpty()) {
             return;
         }
-        
-        if (conditions.size() > MAX_CONDITIONS) {
-            throw new IllegalArgumentException(
-                String.format("Too many conditions. Maximum allowed: %d, provided: %d", 
-                    MAX_CONDITIONS, conditions.size()));
-        }
-        
-        // Validate field path depths and field names
-        for (QueryCondition condition : conditions) {
-            if (condition.getField() != null) {
-                String field = condition.getField();
-                
-                // Validate field name pattern (security: prevent injection)
-                if (!FIELD_NAME_PATTERN.matcher(field).matches()) {
-                    throw new IllegalArgumentException(
-                        String.format("Invalid field name: '%s'. Field names can only contain alphanumeric characters, underscores, and dots", field));
-                }
-                
-                // Validate field path depth
-                int depth = field.split("\\.").length;
-                if (depth > MAX_FIELD_PATH_SEGMENTS) {
-                    throw new IllegalArgumentException(
-                        String.format("Field path too deep: '%s'. Maximum depth: %d", 
-                            field, MAX_FIELD_PATH_SEGMENTS));
-                }
-                
-                // Validate IN operation values size
-                if (condition.getOperation() == QueryOperation.IN ||
-                    condition.getOperation() == QueryOperation.NOT_IN) {
-                    if (condition.getValues() != null && condition.getValues().size() > MAX_IN_VALUES) {
-                        throw new IllegalArgumentException(
-                            String.format("Too many values in IN operation. Maximum allowed: %d, provided: %d", 
-                                MAX_IN_VALUES, condition.getValues().size()));
-                    }
-                }
-                
-                // Validate BETWEEN operation
-                if (condition.getOperation() == QueryOperation.BETWEEN ||
-                    condition.getOperation() == QueryOperation.NOT_BETWEEN) {
-                    if (condition.getStartValue() == null || condition.getEndValue() == null) {
-                        throw new IllegalArgumentException(
-                            "BETWEEN operation requires both startValue and endValue to be provided");
-                    }
-                }
+        for (SortField sortField : sortFields) {
+            if (sortField == null) {
+                continue;
             }
-        }
-        
-        // Validate sort fields if present
-        List<SortField> sortFields = queryRequest.getSortFields();
-        if (sortFields != null && !sortFields.isEmpty()) {
-            for (SortField sortField : sortFields) {
-                if (sortField == null) {
-                    continue; // Skip null sort fields
-                }
-                
-                String field = sortField.getField();
-                if (field == null || field.trim().isEmpty()) {
-                    continue; // Skip empty sort fields
-                }
-                
-                // Validate field name pattern (security: prevent injection)
-                if (!FIELD_NAME_PATTERN.matcher(field).matches()) {
-                    throw new IllegalArgumentException(
-                        String.format("Invalid sort field name: '%s'. Field names can only contain alphanumeric characters, underscores, and dots", field));
-                }
-                
-                // Validate field path depth
-                int depth = field.split("\\.").length;
-                if (depth > MAX_FIELD_PATH_SEGMENTS) {
-                    throw new IllegalArgumentException(
-                        String.format("Sort field path too deep: '%s'. Maximum depth: %d", 
-                            field, MAX_FIELD_PATH_SEGMENTS));
-                }
+            String field = sortField.getField();
+            if (field == null || field.trim().isEmpty()) {
+                continue;
             }
+            validateFieldName(field, "sort field");
         }
+    }
+
+    /**
+     * Enforces the {@link FilterableFields} allow-list for {@code entityClass}. A field is
+     * permitted if the entity declares no allow-list (permissive, v1 behaviour), or the field
+     * is listed, or it is a registered computed field. Otherwise throws {@link QueryException}.
+     */
+    private void assertFilterable(String field, Class<?> entityClass, String usage) {
+        java.util.Set<String> allowed = filterableFieldsFor(entityClass);
+        if (allowed == NO_FILTER_RESTRICTION) {
+            return; // entity opted out of allow-listing (no @FilterableFields)
+        }
+        if (allowed.contains(field)) {
+            return;
+        }
+        if (handlerRegistry != null && handlerRegistry.isComputedField(entityClass, field)) {
+            return;
+        }
+        throw new QueryException(
+                String.format("Field '%s' is not %s on entity %s", field, usage, entityClass.getSimpleName()));
+    }
+
+    private static java.util.Set<String> filterableFieldsFor(Class<?> entityClass) {
+        return FILTERABLE_CACHE.computeIfAbsent(entityClass, ec -> {
+            FilterableFields ann = ec.getAnnotation(FilterableFields.class);
+            if (ann == null || ann.value().length == 0) {
+                return NO_FILTER_RESTRICTION;
+            }
+            return java.util.Set.of(ann.value());
+        });
     }
     
     /**

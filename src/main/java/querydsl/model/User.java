@@ -7,6 +7,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import querydsl.export.Exportable;
+import querydsl.query.FilterableFields;
 import querydsl.query.SortableFields;
 import querydsl.security.EncryptedStringConverter;
 
@@ -25,6 +26,14 @@ import querydsl.security.EncryptedStringConverter;
 @SortableFields({
         "id", "firstName", "lastName", "email", "isActive",
         "createdDate", "lastModifiedDate", "role.name"
+})
+// Filterable allow-list — deliberately excludes password and nationalId/nationalIdHash
+// so a client cannot oracle those values via /query or /exists. Computed fields
+// (fullName, roleName, permissionName) are always permitted.
+@FilterableFields({
+        "id", "firstName", "lastName", "email", "mobileNumber", "isActive",
+        "createdDate", "lastModifiedDate", "createdBy", "lastModifiedBy",
+        "role.id", "role.name"
 })
 public class User extends BaseEntity {
 

@@ -136,6 +136,74 @@ class QueryPredicateBuilderTest {
         assertTrue(s.contains("&&") || s.contains("and"), "Expected AND in: " + p);
     }
 
+    // ---- v2: recursive AND/OR boolean groups ----
+
+    @Test
+    void topLevelOr_combinesConditionsWithOr() {
+        QueryRequest req = new QueryRequest();
+        req.setLogic(LogicOperator.OR);
+        req.setConditions(List.of(
+                new QueryCondition("firstName", QueryOperation.EQUALS, "John", null, null, null),
+                new QueryCondition("email", QueryOperation.EQUALS, "a@b.com", null, null, null)));
+        Predicate p = builder.buildPredicate(req, User.class);
+        assertNotNull(p);
+        assertTrue(p.toString().contains("||"), "Expected OR in: " + p);
+    }
+
+    @Test
+    void nestedGroup_andOfOr_buildsCorrectShape() {
+        // isActive=true AND (firstName=A OR email=b@c.com)
+        QueryRequest req = new QueryRequest();
+        req.setConditions(List.of(
+                new QueryCondition("isActive", QueryOperation.IS_TRUE, null, null, null, null)));
+        QueryGroup orGroup = new QueryGroup();
+        orGroup.setLogic(LogicOperator.OR);
+        orGroup.setConditions(List.of(
+                new QueryCondition("firstName", QueryOperation.EQUALS, "A", null, null, null),
+                new QueryCondition("email", QueryOperation.EQUALS, "b@c.com", null, null, null)));
+        req.setGroups(List.of(orGroup));
+
+        Predicate p = builder.buildPredicate(req, User.class);
+        assertNotNull(p);
+        String s = p.toString();
+        assertTrue(s.contains("||"), "Expected nested OR in: " + p);
+        assertTrue(s.contains("&&") || s.toLowerCase().contains("isactive"), "Expected outer AND in: " + p);
+    }
+
+    @Test
+    void v1FlatRequest_stillBehavesAsAnd() {
+        // Backward compatibility: no logic, no groups → top-level AND.
+        QueryRequest req = new QueryRequest(List.of(
+                new QueryCondition("firstName", QueryOperation.EQUALS, "John", null, null, null),
+                new QueryCondition("isActive", QueryOperation.IS_TRUE, null, null, null, null)));
+        Predicate p = builder.buildPredicate(req, User.class);
+        assertNotNull(p);
+        assertTrue(p.toString().contains("&&"), "v1 flat request must remain AND: " + p);
+    }
+
+    // ---- v2 security: @FilterableFields allow-list closes the filter-oracle hole ----
+
+    @Test
+    void filteringByPassword_isRejected() {
+        // password is NOT in User's @FilterableFields → cannot be used as a boolean oracle.
+        QueryException ex = assertThrows(QueryException.class,
+                () -> build("password", QueryOperation.STARTS_WITH, "$2a$10$"));
+        assertTrue(ex.getMessage().contains("password"));
+        assertTrue(ex.getMessage().contains("filterable"));
+    }
+
+    @Test
+    void filteringByNationalId_isRejected() {
+        assertThrows(QueryException.class,
+                () -> build("nationalId", QueryOperation.EQUALS, "2000000001"));
+    }
+
+    @Test
+    void filteringByAllowedField_isPermitted() {
+        // email IS in the allow-list.
+        assertNotNull(build("email", QueryOperation.EQUALS, "a@b.com"));
+    }
+
     @Test
     void firstName_equalsConditionBuildsCorrectExpression() {
         Predicate p = build("firstName", QueryOperation.EQUALS, "John");

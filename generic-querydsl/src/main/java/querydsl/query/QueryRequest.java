@@ -40,22 +40,46 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class QueryRequest {
-    
+
     /**
-     * List of query conditions to apply
+     * How this request's top-level {@link #conditions} and {@link #groups} are combined.
+     * Defaults to {@link LogicOperator#AND} when {@code null} (v1 compatibility).
+     */
+    private LogicOperator logic;
+
+    /**
+     * Top-level query conditions. With {@link #logic} (default AND) these form the
+     * outermost boolean group. A v1 request that only sets {@code conditions} behaves
+     * exactly as before.
      */
     @Valid
     @Size(max = QueryPredicateBuilder.MAX_CONDITIONS,
             message = "Maximum 50 conditions allowed")
     private List<QueryCondition> conditions;
-    
+
+    /**
+     * Nested boolean groups (recursive), enabling {@code (A AND (B OR C))}. Combined with
+     * {@link #conditions} using {@link #logic}.
+     */
+    @Valid
+    private List<QueryGroup> groups;
+
     /**
      * List of fields to sort by
      */
     @Valid
     @Size(max = 10, message = "Maximum 10 sort fields allowed")
     private List<SortField> sortFields;
-    
+
+    /**
+     * Optional projection (sparse fieldset). When non-empty, {@code /query} returns flat
+     * maps keyed by these dot-path field names instead of full DTOs. {@code null}/empty =
+     * full DTO. Selected fields are subject to the same allow-list as filtering.
+     */
+    @Valid
+    @Size(max = 50, message = "Maximum 50 selected fields allowed")
+    private List<String> select;
+
     /**
      * Convenience constructor for simple queries with conditions only
      */

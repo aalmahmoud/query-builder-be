@@ -7,6 +7,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import querydsl.export.Exportable;
+import querydsl.query.FilterableFields;
 import querydsl.query.SortableFields;
 
 import java.util.HashSet;
@@ -25,6 +26,11 @@ import java.util.Set;
 })
 @SortableFields({
         "id", "name", "isActive", "createdDate", "lastModifiedDate"
+})
+@FilterableFields({
+        "id", "name", "description", "isActive",
+        "createdDate", "lastModifiedDate", "createdBy", "lastModifiedBy",
+        "permissions.id", "permissions.name"
 })
 public class Role extends BaseEntity {
 

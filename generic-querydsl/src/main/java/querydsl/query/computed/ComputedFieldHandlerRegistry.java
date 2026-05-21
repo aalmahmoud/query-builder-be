@@ -61,6 +61,16 @@ public class ComputedFieldHandlerRegistry {
      * @param entityClass the JPA entity class
      * @return the computed-field predicate, or {@code null} if this is not a computed field
      */
+    /**
+     * Returns {@code true} if {@code fieldName} is a registered computed field for
+     * {@code entityClass}. Used by the filterable allow-list so computed fields are always
+     * permitted without being listed in {@code @FilterableFields}.
+     */
+    public boolean isComputedField(Class<?> entityClass, String fieldName) {
+        Map<String, TypedComputedFieldHandler<?, ?>> entityHandlers = typedHandlers.get(entityClass);
+        return entityHandlers != null && entityHandlers.containsKey(fieldName);
+    }
+
     public Predicate buildPredicate(Object qEntity, QueryCondition condition, Class<?> entityClass) {
         Map<String, TypedComputedFieldHandler<?, ?>> entityHandlers = typedHandlers.get(entityClass);
         if (entityHandlers == null) {
