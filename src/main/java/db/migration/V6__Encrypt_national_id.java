@@ -29,10 +29,12 @@ import java.util.List;
  *   <li>Mark {@code national_id_hash} NOT NULL and add a unique index.</li>
  * </ol>
  *
- * <p>The encryption key is read directly from the {@code APP_ENCRYPTION_KEY} env var
- * — Flyway Java migrations run before Spring is fully wired, so they cannot autowire
- * {@code EncryptionService}. The crypto here MUST stay in sync with that service
- * (AES-256-GCM with 12-byte IV + 128-bit tag; HMAC-SHA256 over the plaintext).
+ * <p>Flyway Java migrations run before Spring is fully wired, so they cannot autowire
+ * {@code EncryptionService}. The key is resolved from the Flyway placeholder
+ * {@code app_encryption_key} (which Spring populates from {@code app.encryption.key} in
+ * application.properties) and falls back to the {@code APP_ENCRYPTION_KEY} env var. The
+ * crypto here MUST stay in sync with that service (AES-256-GCM with 12-byte IV + 128-bit
+ * tag; HMAC-SHA256 over the plaintext).
  */
 public class V6__Encrypt_national_id extends BaseJavaMigration {
 
@@ -41,7 +43,7 @@ public class V6__Encrypt_national_id extends BaseJavaMigration {
 
     @Override
     public void migrate(Context context) throws Exception {
-        byte[] keyBytes = loadKey();
+        byte[] keyBytes = loadKey(context);
         SecretKeySpec aesKey = new SecretKeySpec(keyBytes, "AES");
         SecretKeySpec hmacKey = new SecretKeySpec(keyBytes, "HmacSHA256");
 
@@ -95,12 +97,22 @@ public class V6__Encrypt_national_id extends BaseJavaMigration {
         }
     }
 
-    /** Same boot-time check as {@code EncryptionService}, but operating on the env directly. */
-    private static byte[] loadKey() {
-        String b64 = System.getenv("APP_ENCRYPTION_KEY");
+    /**
+     * Same key requirement as {@code EncryptionService}, resolved without a Spring context.
+     * Order: the Spring-populated Flyway placeholder {@code app_encryption_key} first (so
+     * local dev can keep the key in application.properties), then the {@code APP_ENCRYPTION_KEY}
+     * environment variable (prod).
+     */
+    private static byte[] loadKey(Context context) {
+        String b64 = context.getConfiguration().getPlaceholders().get("app_encryption_key");
+        if (b64 == null || b64.isBlank()) {
+            b64 = System.getenv("APP_ENCRYPTION_KEY");
+        }
         if (b64 == null || b64.isBlank()) {
             throw new IllegalStateException(
-                    "APP_ENCRYPTION_KEY env var is required for V6__Encrypt_national_id");
+                    "Encryption key required for V6__Encrypt_national_id: set "
+                            + "spring.flyway.placeholders.app_encryption_key (or app.encryption.key) "
+                            + "or the APP_ENCRYPTION_KEY env var");
         }
         byte[] bytes;
         try {
